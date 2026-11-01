@@ -15,6 +15,8 @@ public interface FinancialTransactionRepository extends JpaRepository<FinancialT
 
     List<FinancialTransaction> findAllByOrderByTransactionDateDescCreatedAtDesc();
 
+    long countByTransactionDateBetween(LocalDate startDate, LocalDate endDate);
+
     @Query("""
             select sum(t.amount) from FinancialTransaction t
             where t.type = :type and t.transactionDate between :startDate and :endDate

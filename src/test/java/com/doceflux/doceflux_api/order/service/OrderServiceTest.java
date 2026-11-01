@@ -5,6 +5,7 @@ import com.doceflux.doceflux_api.customer.repository.CustomerRepository;
 import com.doceflux.doceflux_api.order.domain.Order;
 import com.doceflux.doceflux_api.order.domain.OrderItem;
 import com.doceflux.doceflux_api.order.domain.OrderItemType;
+import com.doceflux.doceflux_api.order.domain.OrderStatus;
 import com.doceflux.doceflux_api.order.dto.OrderItemRequest;
 import com.doceflux.doceflux_api.order.dto.OrderRequest;
 import com.doceflux.doceflux_api.order.repository.OrderRepository;
@@ -140,6 +141,51 @@ class OrderServiceTest {
                 .isInstanceOf(BusinessRuleException.class);
 
         verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    void createsOrderWithPendingStatusAndTotalFromAllItems() {
+        Product product = new Product("Bolo de Cenoura", null, new BigDecimal("45.50"));
+        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        mockSave();
+
+        Order order = orderService.create(new OrderRequest(customer.getId(), null, List.of(
+                new OrderItemRequest(product.getId(), null, null, 3, null),
+                new OrderItemRequest(null, "Docinhos", null, 2, new BigDecimal("120.50")))));
+
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(order.getTotalAmount()).isEqualByComparingTo("377.50");
+        assertThat(order.getTotalAmount().scale()).isEqualTo(2);
+    }
+
+    @Test
+    void changesStatusOfExistingOrder() {
+        Order order = new Order(customer, null);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        Order result = orderService.changeStatus(order.getId(), OrderStatus.IN_PRODUCTION);
+
+        assertThat(result.getStatus()).isEqualTo(OrderStatus.IN_PRODUCTION);
+    }
+
+    @Test
+    void rejectsInvalidStatusTransition() {
+        Order order = new Order(customer, null);
+        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+
+        assertThatThrownBy(() -> orderService.changeStatus(order.getId(), OrderStatus.COMPLETED))
+                .isInstanceOf(BusinessRuleException.class);
+        assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
+    }
+
+    @Test
+    void throwsWhenChangingStatusOfUnknownOrder() {
+        UUID id = UUID.randomUUID();
+        when(orderRepository.findByIdForUpdate(id)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> orderService.changeStatus(id, OrderStatus.CANCELLED))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

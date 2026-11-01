@@ -3,6 +3,7 @@ package com.doceflux.doceflux_api.order.controller;
 import com.doceflux.doceflux_api.customer.domain.Customer;
 import com.doceflux.doceflux_api.order.domain.Order;
 import com.doceflux.doceflux_api.order.domain.OrderItem;
+import com.doceflux.doceflux_api.order.domain.OrderStatus;
 import com.doceflux.doceflux_api.order.service.OrderService;
 import com.doceflux.doceflux_api.product.domain.Product;
 import com.doceflux.doceflux_api.shared.BusinessRuleException;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -178,6 +180,71 @@ class OrderControllerTest {
 
         mockMvc.perform(get("/api/orders"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(2));
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].status").value("PENDING"))
+                .andExpect(jsonPath("$[0].totalAmount").value(171.00))
+                .andExpect(jsonPath("$[0].customerName").value("Maria"));
+    }
+
+    @Test
+    void returnsStatusAndTotalOnSingleOrder() throws Exception {
+        Order order = sampleOrder();
+        when(orderService.findById(order.getId())).thenReturn(order);
+
+        mockMvc.perform(get("/api/orders/{id}", order.getId()))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.totalAmount").value(171.00))
+                .andExpect(jsonPath("$.description").value("Retirada sábado"));
+    }
+
+    private ResultActions patchStatus(Object id, String json) throws Exception {
+        return mockMvc.perform(patch("/api/orders/{id}/status", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json));
+    }
+
+    @Test
+    void changesOrderStatus() throws Exception {
+        Order order = sampleOrder();
+        order.changeStatus(OrderStatus.IN_PRODUCTION);
+        when(orderService.changeStatus(order.getId(), OrderStatus.IN_PRODUCTION)).thenReturn(order);
+
+        patchStatus(order.getId(), "{\"status\":\"IN_PRODUCTION\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("IN_PRODUCTION"))
+                .andExpect(jsonPath("$.totalAmount").value(171.00));
+    }
+
+    @Test
+    void returnsBadRequestOnInvalidTransition() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(orderService.changeStatus(id, OrderStatus.COMPLETED))
+                .thenThrow(new BusinessRuleException("Transição de status inválida: PENDING -> COMPLETED"));
+
+        patchStatus(id, "{\"status\":\"COMPLETED\"}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Transição de status inválida: PENDING -> COMPLETED"));
+    }
+
+    @Test
+    void returnsNotFoundWhenChangingStatusOfUnknownOrder() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(orderService.changeStatus(id, OrderStatus.CANCELLED))
+                .thenThrow(new ResourceNotFoundException("Pedido não encontrado: " + id));
+
+        patchStatus(id, "{\"status\":\"CANCELLED\"}")
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("Pedido não encontrado: " + id));
+    }
+
+    @Test
+    void rejectsMissingOrUnknownStatus() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        patchStatus(id, "{}")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.status").value("O status é obrigatório"));
+        patchStatus(id, "{\"status\":\"SHIPPED\"}").andExpect(status().isBadRequest());
+        verify(orderService, never()).changeStatus(any(), any());
     }
 }

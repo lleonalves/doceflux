@@ -5,6 +5,7 @@ import com.doceflux.doceflux_api.customer.repository.CustomerRepository;
 import com.doceflux.doceflux_api.order.domain.Order;
 import com.doceflux.doceflux_api.order.domain.OrderItem;
 import com.doceflux.doceflux_api.order.domain.OrderItemType;
+import com.doceflux.doceflux_api.order.domain.OrderStatus;
 import com.doceflux.doceflux_api.product.domain.Product;
 import com.doceflux.doceflux_api.product.repository.ProductRepository;
 import jakarta.persistence.EntityManager;
@@ -85,6 +86,50 @@ class OrderRepositoryTest {
         assertThat(catalog.getUnitPriceSnapshot()).isEqualByComparingTo("45.50");
         assertThat(catalog.getSubtotal()).isEqualByComparingTo("136.50");
         assertThat(catalog.getProduct().getPrice()).isEqualByComparingTo("99.99");
+    }
+
+    @Test
+    void persistsStatusAndTotalAmount() {
+        Product product = productRepository.save(new Product("Bolo de Cenoura", null, new BigDecimal("45.50")));
+        Order saved = persistOrderWithCatalogAndCustomItems(product);
+
+        Order found = orderRepository.findById(saved.getId()).orElseThrow();
+
+        assertThat(found.getStatus()).isEqualTo(OrderStatus.PENDING);
+        assertThat(found.getTotalAmount()).isEqualByComparingTo("377.50");
+        Object rawStatus = entityManager.createNativeQuery("select status from orders where id = :id")
+                .setParameter("id", saved.getId()).getSingleResult();
+        assertThat(rawStatus).isEqualTo("PENDING");
+    }
+
+    @Test
+    void keepsTotalWhenProductPriceChangesAndPersistsStatusChange() {
+        Product product = productRepository.save(new Product("Bolo de Cenoura", null, new BigDecimal("45.50")));
+        Order saved = persistOrderWithCatalogAndCustomItems(product);
+        entityManager.createNativeQuery("update products set price = 99.99 where id = :id")
+                .setParameter("id", product.getId()).executeUpdate();
+        entityManager.clear();
+
+        Order locked = orderRepository.findByIdForUpdate(saved.getId()).orElseThrow();
+        locked.changeStatus(OrderStatus.IN_PRODUCTION);
+        orderRepository.flush();
+        entityManager.clear();
+
+        Order found = orderRepository.findById(saved.getId()).orElseThrow();
+        assertThat(found.getStatus()).isEqualTo(OrderStatus.IN_PRODUCTION);
+        assertThat(found.getTotalAmount()).isEqualByComparingTo("377.50");
+    }
+
+    @Test
+    void databaseRejectsInvalidStatus() {
+        Customer customer = customerRepository.saveAndFlush(new Customer("Maria", "11999999999", null, null));
+        Order order = orderRepository.saveAndFlush(new Order(customer, null));
+
+        assertThatThrownBy(() -> entityManager.createNativeQuery(
+                        "update orders set status = 'SHIPPED' where id = :id")
+                .setParameter("id", order.getId())
+                .executeUpdate())
+                .hasRootCauseInstanceOf(java.sql.SQLException.class);
     }
 
     @Test

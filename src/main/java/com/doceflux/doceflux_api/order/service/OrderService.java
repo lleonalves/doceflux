@@ -4,6 +4,7 @@ import com.doceflux.doceflux_api.customer.domain.Customer;
 import com.doceflux.doceflux_api.customer.repository.CustomerRepository;
 import com.doceflux.doceflux_api.order.domain.Order;
 import com.doceflux.doceflux_api.order.domain.OrderItem;
+import com.doceflux.doceflux_api.order.domain.OrderStatus;
 import com.doceflux.doceflux_api.order.dto.OrderItemRequest;
 import com.doceflux.doceflux_api.order.dto.OrderRequest;
 import com.doceflux.doceflux_api.order.repository.OrderRepository;
@@ -51,6 +52,14 @@ public class OrderService {
     public Order findById(UUID id) {
         return orderRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Pedido não encontrado: " + id));
+    }
+
+    @Transactional
+    public Order changeStatus(UUID id, OrderStatus status) {
+        Order order = orderRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Pedido não encontrado: " + id));
+        order.changeStatus(status);
+        return order;
     }
 
     private OrderItem toOrderItem(OrderItemRequest item) {

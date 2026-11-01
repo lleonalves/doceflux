@@ -2,6 +2,9 @@ package com.doceflux.doceflux_api.order.dto;
 
 import com.doceflux.doceflux_api.order.domain.Order;
 
+import com.doceflux.doceflux_api.order.domain.OrderStatus;
+
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -12,6 +15,8 @@ public record OrderResponse(
         String customerName,
         String description,
         List<OrderItemResponse> items,
+        OrderStatus status,
+        BigDecimal totalAmount,
         Instant createdAt,
         Instant updatedAt) {
 
@@ -22,6 +27,8 @@ public record OrderResponse(
                 order.getCustomer().getName(),
                 order.getDescription(),
                 order.getItems().stream().map(OrderItemResponse::from).toList(),
+                order.getStatus(),
+                order.getTotalAmount(),
                 order.getCreatedAt(),
                 order.getUpdatedAt());
     }
