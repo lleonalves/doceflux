@@ -1,6 +1,7 @@
 package com.doceflux.doceflux_api.finance.controller;
 
 import com.doceflux.doceflux_api.finance.domain.FinancialTransaction;
+import com.doceflux.doceflux_api.finance.domain.TransactionType;
 import com.doceflux.doceflux_api.finance.dto.CashFlowResponse;
 import com.doceflux.doceflux_api.finance.service.FinanceService;
 import com.doceflux.doceflux_api.shared.BusinessRuleException;
@@ -19,10 +20,13 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -166,7 +170,7 @@ class FinanceControllerTest {
 
     @Test
     void listsTransactions() throws Exception {
-        when(financeService.findAll()).thenReturn(List.of(
+        when(financeService.findAll(null, null, null, null)).thenReturn(List.of(
                 FinancialTransaction.expense("Farinha", new BigDecimal("10.00"), LocalDate.now(), null),
                 FinancialTransaction.income("Venda", new BigDecimal("40.00"), LocalDate.now(), null, null)));
 
@@ -175,6 +179,90 @@ class FinanceControllerTest {
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].type").value("EXPENSE"))
                 .andExpect(jsonPath("$[1].amount").value(40.00));
+    }
+
+    @Test
+    void listsTransactionsWithCombinedFilters() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        LocalDate start = LocalDate.of(2026, 10, 1);
+        LocalDate end = LocalDate.of(2026, 10, 31);
+        when(financeService.findAll(TransactionType.INCOME, orderId, start, end)).thenReturn(List.of(
+                FinancialTransaction.income("Sinal", new BigDecimal("30.00"), start, null, orderId)));
+
+        mockMvc.perform(get("/api/finance/transactions")
+                        .param("type", "INCOME")
+                        .param("orderId", orderId.toString())
+                        .param("startDate", "2026-10-01")
+                        .param("endDate", "2026-10-31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].orderId").value(orderId.toString()));
+    }
+
+    @Test
+    void returnsEmptyListWhenFiltersMatchNothing() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        when(financeService.findAll(TransactionType.EXPENSE, orderId, null, null)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/finance/transactions")
+                        .param("type", "EXPENSE").param("orderId", orderId.toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
+    void rejectsListingWithStartAfterEnd() throws Exception {
+        when(financeService.findAll(any(), any(), any(), any()))
+                .thenThrow(new BusinessRuleException("A data inicial não pode ser posterior à data final"));
+
+        mockMvc.perform(get("/api/finance/transactions")
+                        .param("startDate", "2026-11-01").param("endDate", "2026-10-01"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("A data inicial não pode ser posterior à data final"));
+    }
+
+    @Test
+    void rejectsListingWithInvalidFilterFormats() throws Exception {
+        mockMvc.perform(get("/api/finance/transactions").param("type", "OUTRO"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/finance/transactions").param("orderId", "nao-e-uuid"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/finance/transactions").param("startDate", "01/10/2026"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/finance/transactions").param("endDate", "amanha"))
+                .andExpect(status().isBadRequest());
+
+        verify(financeService, never()).findAll(any(), any(), any(), any());
+    }
+
+    @Test
+    void deletesTransaction() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(delete("/api/finance/transactions/{id}", id))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        verify(financeService).delete(id);
+    }
+
+    @Test
+    void deleteReturnsNotFoundForUnknownTransaction() throws Exception {
+        UUID id = UUID.randomUUID();
+        doThrow(new ResourceNotFoundException("Movimentação não encontrada: " + id))
+                .when(financeService).delete(id);
+
+        mockMvc.perform(delete("/api/finance/transactions/{id}", id))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("Movimentação não encontrada: " + id));
+    }
+
+    @Test
+    void deleteRejectsInvalidUuid() throws Exception {
+        mockMvc.perform(delete("/api/finance/transactions/{id}", "nao-e-uuid"))
+                .andExpect(status().isBadRequest());
+
+        verify(financeService, never()).delete(any());
     }
 
     @Test

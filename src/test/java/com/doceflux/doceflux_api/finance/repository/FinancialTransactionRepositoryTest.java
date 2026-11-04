@@ -115,6 +115,71 @@ class FinancialTransactionRepositoryTest {
                 TransactionType.INCOME, LocalDate.of(1998, 1, 1), LocalDate.of(1998, 1, 31))).isNull();
     }
 
+    private static final LocalDate P_START = LocalDate.of(1997, 3, 10);
+    private static final LocalDate P_END = LocalDate.of(1997, 3, 20);
+
+    private List<UUID> idsOf(TransactionType type, UUID orderId, LocalDate start, LocalDate end) {
+        return transactionRepository
+                .findAll(FinancialTransactionSpecifications.withFilters(type, orderId, start, end))
+                .stream().map(FinancialTransaction::getId).toList();
+    }
+
+    @Test
+    void filtersByTypeOrderAndPeriodWithInclusiveBoundaries() {
+        Order order = persistOrder();
+        UUID otherOrderId = persistOrder().getId();
+        FinancialTransaction before = transactionRepository.save(
+                FinancialTransaction.expense("Antes", BigDecimal.ONE, P_START.minusDays(1), null));
+        FinancialTransaction atStart = transactionRepository.save(
+                FinancialTransaction.income("Início", BigDecimal.ONE, P_START, null, order.getId()));
+        FinancialTransaction inside = transactionRepository.save(
+                FinancialTransaction.expense("Dentro", BigDecimal.ONE, P_START.plusDays(5), null));
+        FinancialTransaction atEnd = transactionRepository.save(
+                FinancialTransaction.income("Fim", BigDecimal.ONE, P_END, null, order.getId()));
+        FinancialTransaction after = transactionRepository.save(
+                FinancialTransaction.income("Depois", BigDecimal.ONE, P_END.plusDays(1), null, otherOrderId));
+        transactionRepository.flush();
+        entityManager.clear();
+
+        assertThat(idsOf(null, null, P_START, P_END))
+                .containsExactlyInAnyOrder(atStart.getId(), inside.getId(), atEnd.getId());
+        assertThat(idsOf(null, null, P_START, null))
+                .contains(atStart.getId(), inside.getId(), atEnd.getId(), after.getId())
+                .doesNotContain(before.getId());
+        assertThat(idsOf(null, null, null, P_END))
+                .contains(before.getId(), atStart.getId(), inside.getId(), atEnd.getId())
+                .doesNotContain(after.getId());
+        assertThat(idsOf(TransactionType.EXPENSE, null, P_START, P_END)).containsExactly(inside.getId());
+        assertThat(idsOf(TransactionType.INCOME, null, P_START, P_END))
+                .containsExactlyInAnyOrder(atStart.getId(), atEnd.getId());
+        assertThat(idsOf(null, order.getId(), null, null))
+                .containsExactlyInAnyOrder(atStart.getId(), atEnd.getId());
+        assertThat(idsOf(TransactionType.INCOME, order.getId(), P_START.plusDays(1), P_END))
+                .containsExactly(atEnd.getId());
+        assertThat(idsOf(TransactionType.EXPENSE, order.getId(), null, null)).isEmpty();
+    }
+
+    @Test
+    void deletedTransactionIsNotListedNorSummedAndOrderIsKept() {
+        Order order = persistOrder();
+        FinancialTransaction kept = transactionRepository.save(
+                FinancialTransaction.income("Fica", new BigDecimal("10.00"), P_START, null, order.getId()));
+        FinancialTransaction removed = transactionRepository.save(
+                FinancialTransaction.income("Sai", new BigDecimal("5.00"), P_START, null, order.getId()));
+        transactionRepository.flush();
+        entityManager.clear();
+
+        transactionRepository.deleteById(removed.getId());
+        transactionRepository.flush();
+        entityManager.clear();
+
+        assertThat(idsOf(null, order.getId(), null, null)).containsExactly(kept.getId());
+        assertThat(transactionRepository.existsById(removed.getId())).isFalse();
+        assertThat(transactionRepository.sumAmountByTypeAndPeriod(TransactionType.INCOME, P_START, P_START))
+                .isEqualByComparingTo("10.00");
+        assertThat(orderRepository.existsById(order.getId())).isTrue();
+    }
+
     @Test
     void databaseRejectsIncomeLinkedToUnknownOrder() {
         assertThatThrownBy(() -> transactionRepository.saveAndFlush(FinancialTransaction.income(

@@ -5,10 +5,16 @@ import com.doceflux.doceflux_api.finance.dto.ExpenseRequest;
 import com.doceflux.doceflux_api.finance.dto.IncomeRequest;
 import com.doceflux.doceflux_api.finance.dto.TransactionResponse;
 import com.doceflux.doceflux_api.finance.service.FinanceService;
+import com.doceflux.doceflux_api.finance.domain.TransactionType;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -44,8 +50,26 @@ public class FinanceController {
     }
 
     @GetMapping("/transactions")
-    public List<TransactionResponse> findAll() {
-        return financeService.findAll().stream().map(TransactionResponse::from).toList();
+    public List<TransactionResponse> findAll(
+            @RequestParam(required = false) TransactionType type,
+            @RequestParam(required = false) UUID orderId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return financeService.findAll(type, orderId, startDate, endDate).stream()
+                .map(TransactionResponse::from).toList();
+    }
+
+    @DeleteMapping("/transactions/{id}")
+    @Operation(summary = "Exclui uma movimentação",
+            description = "Remove fisicamente o lançamento. Não altera o pedido vinculado, se houver.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Movimentação excluída"),
+            @ApiResponse(responseCode = "400", description = "Identificador inválido", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Movimentação não encontrada", content = @Content)
+    })
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        financeService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/transactions/{id}")

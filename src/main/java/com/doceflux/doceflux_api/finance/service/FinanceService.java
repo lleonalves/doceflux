@@ -9,6 +9,8 @@ import com.doceflux.doceflux_api.finance.repository.FinancialTransactionReposito
 import com.doceflux.doceflux_api.order.repository.OrderRepository;
 import com.doceflux.doceflux_api.shared.BusinessRuleException;
 import com.doceflux.doceflux_api.shared.ResourceNotFoundException;
+import com.doceflux.doceflux_api.finance.repository.FinancialTransactionSpecifications;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,8 +50,19 @@ public class FinanceService {
     }
 
     @Transactional(readOnly = true)
-    public List<FinancialTransaction> findAll() {
-        return transactionRepository.findAllByOrderByTransactionDateDescCreatedAtDesc();
+    public List<FinancialTransaction> findAll(TransactionType type, UUID orderId,
+                                              LocalDate startDate, LocalDate endDate) {
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new BusinessRuleException("A data inicial não pode ser posterior à data final");
+        }
+        return transactionRepository.findAll(
+                FinancialTransactionSpecifications.withFilters(type, orderId, startDate, endDate),
+                Sort.by(Sort.Order.desc("transactionDate"), Sort.Order.desc("createdAt")));
+    }
+
+    @Transactional
+    public void delete(UUID id) {
+        transactionRepository.delete(findById(id));
     }
 
     @Transactional(readOnly = true)
