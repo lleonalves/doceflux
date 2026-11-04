@@ -119,6 +119,21 @@ class OrderServiceTest {
     }
 
     @Test
+    void rejectsInactiveCatalogProduct() {
+        Product product = new Product("Bolo de Cenoura", null, new BigDecimal("45.50"));
+        product.changeActive(false);
+        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+
+        assertThatThrownBy(() -> orderService.create(new OrderRequest(customer.getId(), null,
+                List.of(new OrderItemRequest(product.getId(), null, null, 1, null)))))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("inativo");
+
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
     void rejectsCustomItemWithoutNameOrPrice() {
         when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
 

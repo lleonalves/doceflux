@@ -2,6 +2,7 @@ package com.doceflux.doceflux_api.product.controller;
 
 import com.doceflux.doceflux_api.product.domain.Product;
 import com.doceflux.doceflux_api.product.service.ProductService;
+import com.doceflux.doceflux_api.shared.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -12,13 +13,18 @@ import org.springframework.test.web.servlet.ResultActions;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -117,7 +123,7 @@ class ProductControllerTest {
 
     @Test
     void listsProducts() throws Exception {
-        when(productService.findAll()).thenReturn(List.of(
+        when(productService.findAll(null)).thenReturn(List.of(
                 new Product("Brigadeiro", null, new BigDecimal("3.50")),
                 new Product("Bolo", "Chocolate", new BigDecimal("40.00"))));
 
@@ -128,5 +134,158 @@ class ProductControllerTest {
                 .andExpect(jsonPath("$[0].price").value(3.50))
                 .andExpect(jsonPath("$[1].description").value("Chocolate"))
                 .andExpect(jsonPath("$[1].active").value(true));
+    }
+
+    @Test
+    void listsOnlyActiveProducts() throws Exception {
+        when(productService.findAll(true)).thenReturn(List.of(new Product("Bolo", null, new BigDecimal("40.00"))));
+
+        mockMvc.perform(get("/api/products").param("active", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].active").value(true));
+    }
+
+    @Test
+    void listsOnlyInactiveProducts() throws Exception {
+        Product inactive = new Product("Torta", null, new BigDecimal("30.00"));
+        inactive.changeActive(false);
+        when(productService.findAll(false)).thenReturn(List.of(inactive));
+
+        mockMvc.perform(get("/api/products").param("active", "false"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].active").value(false));
+    }
+
+    @Test
+    void rejectsInvalidActiveFilter() throws Exception {
+        mockMvc.perform(get("/api/products").param("active", "talvez"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void returnsExistingProduct() throws Exception {
+        Product product = new Product("Bolo", null, new BigDecimal("40.00"));
+        when(productService.findById(product.getId())).thenReturn(product);
+
+        mockMvc.perform(get("/api/products/{id}", product.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(product.getId().toString()))
+                .andExpect(jsonPath("$.name").value("Bolo"));
+    }
+
+    @Test
+    void returnsNotFoundForUnknownProduct() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(productService.findById(id)).thenThrow(new ResourceNotFoundException("Produto não encontrado: " + id));
+
+        mockMvc.perform(get("/api/products/{id}", id))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("Produto não encontrado: " + id));
+    }
+
+    private ResultActions putProduct(UUID id, String json) throws Exception {
+        return mockMvc.perform(put("/api/products/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json));
+    }
+
+    @Test
+    void updatesValidProduct() throws Exception {
+        Product product = new Product("Bolo Premium", "Cobertura", new BigDecimal("55.00"));
+        when(productService.update(eq(product.getId()), any())).thenReturn(product);
+
+        putProduct(product.getId(), """
+                {"name":"Bolo Premium","description":"Cobertura","price":55.00}
+                """)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(product.getId().toString()))
+                .andExpect(jsonPath("$.name").value("Bolo Premium"))
+                .andExpect(jsonPath("$.price").value(55.00))
+                .andExpect(jsonPath("$.active").value(true));
+    }
+
+    @Test
+    void updateRejectsInvalidPayloads() throws Exception {
+        putProduct(UUID.randomUUID(), """
+                {"name":"  ","price":10.00}
+                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.name").value("O nome é obrigatório"));
+        putProduct(UUID.randomUUID(), """
+                {"name":"Bolo","price":0}
+                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.price").value("O preço deve ser maior que zero"));
+        putProduct(UUID.randomUUID(), """
+                {"name":"Bolo","price":-1}
+                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.price").value("O preço deve ser maior que zero"));
+        putProduct(UUID.randomUUID(), """
+                {"name":"Bolo"}
+                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.price").value("O preço é obrigatório"));
+
+        verify(productService, never()).update(any(), any());
+    }
+
+    @Test
+    void updateReturnsNotFoundForUnknownProduct() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(productService.update(eq(id), any()))
+                .thenThrow(new ResourceNotFoundException("Produto não encontrado: " + id));
+
+        putProduct(id, """
+                {"name":"Bolo","price":10.00}
+                """)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.detail").value("Produto não encontrado: " + id));
+    }
+
+    private ResultActions patchActive(UUID id, String json) throws Exception {
+        return mockMvc.perform(patch("/api/products/{id}/active", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(json));
+    }
+
+    @Test
+    void changesActiveStatus() throws Exception {
+        Product product = new Product("Bolo", null, new BigDecimal("40.00"));
+        product.changeActive(false);
+        when(productService.changeActive(product.getId(), false)).thenReturn(product);
+
+        patchActive(product.getId(), """
+                {"active":false}
+                """)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(product.getId().toString()))
+                .andExpect(jsonPath("$.active").value(false));
+    }
+
+    @Test
+    void rejectsMissingActiveField() throws Exception {
+        patchActive(UUID.randomUUID(), """
+                {"active":null}
+                """)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors.active").value("O campo active é obrigatório"));
+        patchActive(UUID.randomUUID(), "{}").andExpect(status().isBadRequest());
+
+        verify(productService, never()).changeActive(any(), anyBoolean());
+    }
+
+    @Test
+    void changeActiveReturnsNotFoundForUnknownProduct() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(productService.changeActive(id, true))
+                .thenThrow(new ResourceNotFoundException("Produto não encontrado: " + id));
+
+        patchActive(id, """
+                {"active":true}
+                """)
+                .andExpect(status().isNotFound());
     }
 }

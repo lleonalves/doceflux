@@ -47,6 +47,18 @@ public class Product {
         this.updatedAt = this.createdAt;
     }
 
+    public void update(String name, String description, BigDecimal price) {
+        this.name = name;
+        this.description = description;
+        this.price = price;
+        this.updatedAt = Instant.now();
+    }
+
+    public void changeActive(boolean active) {
+        this.active = active;
+        this.updatedAt = Instant.now();
+    }
+
     public UUID getId() {
         return id;
     }

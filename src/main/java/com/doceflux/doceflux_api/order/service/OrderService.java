@@ -75,7 +75,11 @@ public class OrderService {
         }
         Product product = productRepository.findById(item.productId())
                 .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado: " + item.productId()));
-        return OrderItem.fromCatalog(product, item.description(), item.quantity());
+        if (!product.isActive()) {
+            throw new BusinessRuleException(
+                    "O produto '" + product.getName() + "' está inativo e não pode ser incluído em novos pedidos");
+        }
+        return OrderItem.fromCatalog(product,item.description(), item.quantity());
     }
 
     private OrderItem customItem(OrderItemRequest item) {
