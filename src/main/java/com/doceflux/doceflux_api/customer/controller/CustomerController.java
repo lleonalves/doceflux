@@ -9,8 +9,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
@@ -37,8 +39,13 @@ public class CustomerController {
     }
 
     @GetMapping
-    public List<CustomerResponse> findAll() {
-        return customerService.findAll().stream().map(CustomerResponse::from).toList();
+    public List<CustomerResponse> findAll(@RequestParam(required = false) String search) {
+        return customerService.search(search).stream().map(CustomerResponse::from).toList();
+    }
+
+    @PutMapping("/{id}")
+    public CustomerResponse update(@PathVariable UUID id, @Valid @RequestBody CustomerRequest request) {
+        return CustomerResponse.from(customerService.update(id, request));
     }
 
     @GetMapping("/{id}")

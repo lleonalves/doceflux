@@ -35,6 +35,27 @@ public class CustomerService {
     }
 
     @Transactional(readOnly = true)
+    public List<Customer> search(String search) {
+        String term = search == null ? "" : search.trim();
+        if (term.isEmpty()) {
+            return findAll();
+        }
+        String digits = term.replaceAll("\\D", "");
+        return customerRepository.searchByNameOrPhone(term, digits);
+    }
+
+    @Transactional
+    public Customer update(UUID id, CustomerRequest request) {
+        Customer customer = findById(id);
+        customer.update(
+                request.name().trim(),
+                request.phone().trim(),
+                request.email(),
+                request.address());
+        return customer;
+    }
+
+    @Transactional(readOnly = true)
     public Customer findById(UUID id) {
         return customerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Cliente não encontrado: " + id));
