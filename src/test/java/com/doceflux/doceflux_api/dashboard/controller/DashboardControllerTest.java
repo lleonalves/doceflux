@@ -10,6 +10,7 @@ import com.doceflux.doceflux_api.order.domain.OrderStatus;
 import com.doceflux.doceflux_api.shared.BusinessRuleException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -27,6 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DashboardController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class DashboardControllerTest {
 
     private static final LocalDate START = LocalDate.of(2026, 10, 1);

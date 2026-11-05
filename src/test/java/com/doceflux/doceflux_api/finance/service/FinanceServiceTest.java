@@ -182,7 +182,7 @@ class FinanceServiceTest {
 
         assertThatThrownBy(() -> financeService.delete(id)).isInstanceOf(ResourceNotFoundException.class);
 
-        verify(transactionRepository, never()).delete(any());
+        verify(transactionRepository, never()).delete(any(FinancialTransaction.class));
     }
 
     @Test

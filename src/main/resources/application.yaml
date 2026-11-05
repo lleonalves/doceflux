@@ -15,3 +15,9 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
+
+app:
+  security:
+    jwt:
+      secret: ${APP_JWT_SECRET:doceflux-dev-only-secret-change-in-production-0123456789}
+      expiration-seconds: ${APP_JWT_EXPIRATION_SECONDS:28800}
