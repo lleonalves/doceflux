@@ -12,6 +12,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,21 +39,22 @@ public class OrderController {
     }
 
     @PostMapping
-    public ResponseEntity<OrderResponse> create(@Valid @RequestBody OrderRequest request) {
-        OrderResponse response = OrderResponse.from(orderService.create(request));
+    public ResponseEntity<OrderResponse> create(@AuthenticationPrincipal Jwt jwt,
+                                                @Valid @RequestBody OrderRequest request) {
+        OrderResponse response = OrderResponse.from(orderService.create(storeId(jwt), request));
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}").buildAndExpand(response.id()).toUri();
         return ResponseEntity.status(HttpStatus.CREATED).location(location).body(response);
     }
 
     @GetMapping
-    public List<OrderResponse> findAll() {
-        return orderService.findAll().stream().map(OrderResponse::from).toList();
+    public List<OrderResponse> findAll(@AuthenticationPrincipal Jwt jwt) {
+        return orderService.findAll(storeId(jwt)).stream().map(OrderResponse::from).toList();
     }
 
     @GetMapping("/{id}")
-    public OrderResponse findById(@PathVariable UUID id) {
-        return OrderResponse.from(orderService.findById(id));
+    public OrderResponse findById(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+        return OrderResponse.from(orderService.findById(id, storeId(jwt)));
     }
 
     @Operation(summary = "Altera o status do pedido",
@@ -64,7 +67,12 @@ public class OrderController {
             @ApiResponse(responseCode = "404", description = "Pedido não encontrado", content = @Content)
     })
     @PatchMapping("/{id}/status")
-    public OrderResponse changeStatus(@PathVariable UUID id, @Valid @RequestBody OrderStatusRequest request) {
-        return OrderResponse.from(orderService.changeStatus(id, request.status()));
+    public OrderResponse changeStatus(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                      @Valid @RequestBody OrderStatusRequest request) {
+        return OrderResponse.from(orderService.changeStatus(id, storeId(jwt), request.status()));
+    }
+
+    private static UUID storeId(Jwt jwt) {
+        return UUID.fromString(jwt.getClaimAsString("storeId"));
     }
 }

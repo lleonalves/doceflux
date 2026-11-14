@@ -9,12 +9,15 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 @Tag(name = "Dashboard")
 @RestController
@@ -38,10 +41,11 @@ public class DashboardController {
     })
     @GetMapping("/summary")
     public DashboardSummaryResponse summary(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Data inicial (YYYY-MM-DD)", required = true, example = "2026-10-01")
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @Parameter(description = "Data final (YYYY-MM-DD)", required = true, example = "2026-10-31")
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        return dashboardService.summary(startDate, endDate);
+        return dashboardService.summary(UUID.fromString(jwt.getClaimAsString("storeId")), startDate, endDate);
     }
 }

@@ -24,6 +24,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 class OrderRepositoryTest {
 
+    private static final UUID STORE = UUID.randomUUID();
+
     @Autowired
     private OrderRepository orderRepository;
 
@@ -37,8 +39,8 @@ class OrderRepositoryTest {
     private EntityManager entityManager;
 
     private Order persistOrderWithCatalogAndCustomItems(Product product) {
-        Customer customer = customerRepository.save(new Customer("Maria", "11999999999", null, null));
-        Order order = new Order(customer, "Retirada sábado");
+        Customer customer = customerRepository.save(new Customer(STORE, "Maria", "11999999999", null, null));
+        Order order = new Order(STORE, customer, "Retirada sábado");
         order.addItem(OrderItem.fromCatalog(product, "Sem granulado", 3));
         order.addItem(OrderItem.custom("Bolo temático", "Unicórnio", 2, new BigDecimal("120.50")));
         orderRepository.saveAndFlush(order);
@@ -48,10 +50,10 @@ class OrderRepositoryTest {
 
     @Test
     void persistsOrderWithItemsAndRelationships() {
-        Product product = productRepository.save(new Product("Bolo de Cenoura", null, new BigDecimal("45.50")));
+        Product product = productRepository.save(new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null));
         Order saved = persistOrderWithCatalogAndCustomItems(product);
 
-        Order found = orderRepository.findById(saved.getId()).orElseThrow();
+        Order found = orderRepository.findByIdAndStoreId(saved.getId(), STORE).orElseThrow();
 
         assertThat(found.getCustomer().getName()).isEqualTo("Maria");
         assertThat(found.getDescription()).isEqualTo("Retirada sábado");
@@ -72,7 +74,7 @@ class OrderRepositoryTest {
 
     @Test
     void keepsSnapshotsWhenProductIsChangedLater() {
-        Product product = productRepository.save(new Product("Bolo de Cenoura", null, new BigDecimal("45.50")));
+        Product product = productRepository.save(new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null));
         Order saved = persistOrderWithCatalogAndCustomItems(product);
 
         entityManager.createNativeQuery("update products set name = 'Bolo Novo', price = 99.99 where id = :id")
@@ -80,7 +82,7 @@ class OrderRepositoryTest {
                 .executeUpdate();
         entityManager.clear();
 
-        OrderItem catalog = orderRepository.findById(saved.getId()).orElseThrow().getItems().stream()
+        OrderItem catalog = orderRepository.findByIdAndStoreId(saved.getId(), STORE).orElseThrow().getItems().stream()
                 .filter(i -> i.getItemType() == OrderItemType.CATALOG).findFirst().orElseThrow();
         assertThat(catalog.getProductNameSnapshot()).isEqualTo("Bolo de Cenoura");
         assertThat(catalog.getUnitPriceSnapshot()).isEqualByComparingTo("45.50");
@@ -90,10 +92,10 @@ class OrderRepositoryTest {
 
     @Test
     void persistsStatusAndTotalAmount() {
-        Product product = productRepository.save(new Product("Bolo de Cenoura", null, new BigDecimal("45.50")));
+        Product product = productRepository.save(new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null));
         Order saved = persistOrderWithCatalogAndCustomItems(product);
 
-        Order found = orderRepository.findById(saved.getId()).orElseThrow();
+        Order found = orderRepository.findByIdAndStoreId(saved.getId(), STORE).orElseThrow();
 
         assertThat(found.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(found.getTotalAmount()).isEqualByComparingTo("377.50");
@@ -104,26 +106,26 @@ class OrderRepositoryTest {
 
     @Test
     void keepsTotalWhenProductPriceChangesAndPersistsStatusChange() {
-        Product product = productRepository.save(new Product("Bolo de Cenoura", null, new BigDecimal("45.50")));
+        Product product = productRepository.save(new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null));
         Order saved = persistOrderWithCatalogAndCustomItems(product);
         entityManager.createNativeQuery("update products set price = 99.99 where id = :id")
                 .setParameter("id", product.getId()).executeUpdate();
         entityManager.clear();
 
-        Order locked = orderRepository.findByIdForUpdate(saved.getId()).orElseThrow();
+        Order locked = orderRepository.findByIdAndStoreIdForUpdate(saved.getId(), STORE).orElseThrow();
         locked.changeStatus(OrderStatus.IN_PRODUCTION);
         orderRepository.flush();
         entityManager.clear();
 
-        Order found = orderRepository.findById(saved.getId()).orElseThrow();
+        Order found = orderRepository.findByIdAndStoreId(saved.getId(), STORE).orElseThrow();
         assertThat(found.getStatus()).isEqualTo(OrderStatus.IN_PRODUCTION);
         assertThat(found.getTotalAmount()).isEqualByComparingTo("377.50");
     }
 
     @Test
     void databaseRejectsInvalidStatus() {
-        Customer customer = customerRepository.saveAndFlush(new Customer("Maria", "11999999999", null, null));
-        Order order = orderRepository.saveAndFlush(new Order(customer, null));
+        Customer customer = customerRepository.saveAndFlush(new Customer(STORE, "Maria", "11999999999", null, null));
+        Order order = orderRepository.saveAndFlush(new Order(STORE, customer, null));
 
         assertThatThrownBy(() -> entityManager.createNativeQuery(
                         "update orders set status = 'SHIPPED' where id = :id")
@@ -134,8 +136,8 @@ class OrderRepositoryTest {
 
     @Test
     void databaseRejectsCatalogItemWithoutProduct() {
-        Customer customer = customerRepository.saveAndFlush(new Customer("Maria", "11999999999", null, null));
-        Order order = orderRepository.saveAndFlush(new Order(customer, null));
+        Customer customer = customerRepository.saveAndFlush(new Customer(STORE, "Maria", "11999999999", null, null));
+        Order order = orderRepository.saveAndFlush(new Order(STORE, customer, null));
 
         assertThatThrownBy(() -> entityManager.createNativeQuery("""
                 insert into order_items (id, order_id, item_type, product_name_snapshot, quantity,

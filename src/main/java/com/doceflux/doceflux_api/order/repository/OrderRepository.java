@@ -15,23 +15,24 @@ import java.util.UUID;
 
 public interface OrderRepository extends JpaRepository<Order, UUID> {
 
-    @Override
     @EntityGraph(attributePaths = {"customer", "items"})
-    List<Order> findAll();
+    List<Order> findAllByStoreId(UUID storeId);
 
-    @Override
     @EntityGraph(attributePaths = {"customer", "items"})
-    Optional<Order> findById(UUID id);
+    Optional<Order> findByIdAndStoreId(UUID id, UUID storeId);
+
+    boolean existsByIdAndStoreId(UUID id, UUID storeId);
 
     @Query("""
             select o.status as status, count(o) as count, coalesce(sum(o.totalAmount), 0) as totalAmount
             from Order o
-            where o.createdAt >= :from and o.createdAt < :to
+            where o.storeId = :storeId and o.createdAt >= :from and o.createdAt < :to
             group by o.status
             """)
-    List<OrderStatusTotals> summarizeByStatus(@Param("from") Instant from, @Param("to") Instant to);
+    List<OrderStatusTotals> summarizeByStatus(@Param("storeId") UUID storeId, @Param("from") Instant from,
+                                           @Param("to") Instant to);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select o from Order o where o.id = :id")
-    Optional<Order> findByIdForUpdate(@Param("id") UUID id);
+    @Query("select o from Order o where o.id = :id and o.storeId = :storeId")
+    Optional<Order> findByIdAndStoreIdForUpdate(@Param("id") UUID id, @Param("storeId") UUID storeId);
 }

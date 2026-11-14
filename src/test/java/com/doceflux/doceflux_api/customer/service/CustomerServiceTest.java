@@ -25,6 +25,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class CustomerServiceTest {
 
+    private static final UUID STORE = UUID.randomUUID();
+
     @Mock
     private CustomerRepository customerRepository;
 
@@ -35,7 +37,7 @@ class CustomerServiceTest {
     void createsCustomerWithGeneratedIdAndCreationDate() {
         when(customerRepository.save(any(Customer.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Customer created = customerService.create(
+        Customer created = customerService.create(STORE,
                 new CustomerRequest("Maria", "11999999999", "maria@email.com", "Rua A, 10"));
 
         assertThat(created.getId()).isNotNull();
@@ -48,39 +50,39 @@ class CustomerServiceTest {
 
     @Test
     void findsExistingCustomerById() {
-        Customer customer = new Customer("Maria", "11999999999", null, null);
-        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        Customer customer = new Customer(STORE, "Maria", "11999999999", null, null);
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
 
-        assertThat(customerService.findById(customer.getId())).isSameAs(customer);
+        assertThat(customerService.findById(customer.getId(), STORE)).isSameAs(customer);
     }
 
     @Test
     void throwsWhenCustomerDoesNotExist() {
         UUID id = UUID.randomUUID();
-        when(customerRepository.findById(id)).thenReturn(Optional.empty());
+        when(customerRepository.findByIdAndStoreId(id, STORE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> customerService.findById(id))
+        assertThatThrownBy(() -> customerService.findById(id, STORE))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     void listsAllCustomers() {
         List<Customer> customers = List.of(
-                new Customer("Maria", "11999999999", null, null),
-                new Customer("Ana", "11888888888", null, null));
-        when(customerRepository.findAll()).thenReturn(customers);
+                new Customer(STORE, "Maria", "11999999999", null, null),
+                new Customer(STORE, "Ana", "11888888888", null, null));
+        when(customerRepository.findAllByStoreId(STORE)).thenReturn(customers);
 
-        assertThat(customerService.findAll()).containsExactlyElementsOf(customers);
+        assertThat(customerService.findAll(STORE)).containsExactlyElementsOf(customers);
     }
 
     @Test
     void updatesAllEditableFieldsTrimmingNameAndPhone() {
-        Customer customer = new Customer("Maria", "11999999999", "maria@email.com", "Rua A, 10");
+        Customer customer = new Customer(STORE, "Maria", "11999999999", "maria@email.com", "Rua A, 10");
         UUID id = customer.getId();
         Instant createdAt = customer.getCreatedAt();
-        when(customerRepository.findById(id)).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndStoreId(id, STORE)).thenReturn(Optional.of(customer));
 
-        Customer updated = customerService.update(id,
+        Customer updated = customerService.update(id, STORE,
                 new CustomerRequest("  Maria Oliveira ", " (12) 99999-9999  ", null, null));
 
         assertThat(updated.getId()).isEqualTo(id);
@@ -95,37 +97,47 @@ class CustomerServiceTest {
     @Test
     void updateThrowsWhenCustomerDoesNotExist() {
         UUID id = UUID.randomUUID();
-        when(customerRepository.findById(id)).thenReturn(Optional.empty());
+        when(customerRepository.findByIdAndStoreId(id, STORE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> customerService.update(id,
+        assertThatThrownBy(() -> customerService.update(id, STORE,
                 new CustomerRequest("Maria", "11999999999", null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    void searchWithoutTermListsAllCustomers() {
-        List<Customer> customers = List.of(new Customer("Maria", "11999999999", null, null));
-        when(customerRepository.findAll()).thenReturn(customers);
+    void doesNotFindCustomerOfAnotherStore() {
+        Customer customer = new Customer(STORE, "Maria", "11999999999", null, null);
+        UUID otherStore = UUID.randomUUID();
+        when(customerRepository.findByIdAndStoreId(customer.getId(), otherStore)).thenReturn(Optional.empty());
 
-        assertThat(customerService.search(null)).isEqualTo(customers);
-        assertThat(customerService.search("")).isEqualTo(customers);
-        assertThat(customerService.search("   ")).isEqualTo(customers);
-        verify(customerRepository, never()).searchByNameOrPhone(any(), any());
+        assertThatThrownBy(() -> customerService.findById(customer.getId(), otherStore))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void searchWithoutTermListsAllCustomers() {
+        List<Customer> customers = List.of(new Customer(STORE, "Maria", "11999999999", null, null));
+        when(customerRepository.findAllByStoreId(STORE)).thenReturn(customers);
+
+        assertThat(customerService.search(STORE, null)).isEqualTo(customers);
+        assertThat(customerService.search(STORE, "")).isEqualTo(customers);
+        assertThat(customerService.search(STORE, "   ")).isEqualTo(customers);
+        verify(customerRepository, never()).searchByNameOrPhone(any(), any(), any());
     }
 
     @Test
     void searchTrimsTermAndExtractsPhoneDigits() {
-        List<Customer> customers = List.of(new Customer("Maria", "(12) 99999-9999", null, null));
-        when(customerRepository.searchByNameOrPhone("(12) 99999-9999", "12999999999")).thenReturn(customers);
+        List<Customer> customers = List.of(new Customer(STORE, "Maria", "(12) 99999-9999", null, null));
+        when(customerRepository.searchByNameOrPhone(STORE, "(12) 99999-9999", "12999999999")).thenReturn(customers);
 
-        assertThat(customerService.search("  (12) 99999-9999 ")).isEqualTo(customers);
+        assertThat(customerService.search(STORE, "  (12) 99999-9999 ")).isEqualTo(customers);
     }
 
     @Test
     void searchWithoutDigitsSendsEmptyDigits() {
-        when(customerRepository.searchByNameOrPhone("Maria", "")).thenReturn(List.of());
+        when(customerRepository.searchByNameOrPhone(STORE, "Maria", "")).thenReturn(List.of());
 
-        assertThat(customerService.search(" Maria ")).isEmpty();
-        verify(customerRepository).searchByNameOrPhone("Maria", "");
+        assertThat(customerService.search(STORE, " Maria ")).isEmpty();
+        verify(customerRepository).searchByNameOrPhone(STORE, "Maria", "");
     }
 }

@@ -34,6 +34,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class OrderServiceTest {
 
+    private static final UUID STORE = UUID.randomUUID();
+
     @Mock
     private OrderRepository orderRepository;
 
@@ -46,7 +48,7 @@ class OrderServiceTest {
     @InjectMocks
     private OrderService orderService;
 
-    private final Customer customer = new Customer("Maria", "11999999999", null, null);
+    private final Customer customer = new Customer(STORE, "Maria", "11999999999", null, null);
 
     private void mockSave() {
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -54,12 +56,12 @@ class OrderServiceTest {
 
     @Test
     void createsOrderWithCatalogItemSnapshottingNameAndPrice() {
-        Product product = new Product("Bolo de Cenoura", null, new BigDecimal("45.50"));
-        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        Product product = new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null);
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
+        when(productRepository.findByIdAndStoreId(product.getId(), STORE)).thenReturn(Optional.of(product));
         mockSave();
 
-        Order order = orderService.create(new OrderRequest(customer.getId(), "Retirada sábado",
+        Order order = orderService.create(STORE, new OrderRequest(customer.getId(), "Retirada sábado",
                 List.of(new OrderItemRequest(product.getId(), null, "Sem granulado", 3, null))));
 
         assertThat(order.getId()).isNotNull();
@@ -79,10 +81,10 @@ class OrderServiceTest {
 
     @Test
     void createsOrderWithCustomItemWithoutProduct() {
-        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
         mockSave();
 
-        Order order = orderService.create(new OrderRequest(customer.getId(), null,
+        Order order = orderService.create(STORE, new OrderRequest(customer.getId(), null,
                 List.of(new OrderItemRequest(null, " Bolo temático ", "Tema unicórnio", 2, new BigDecimal("120.5")))));
 
         OrderItem item = order.getItems().getFirst();
@@ -96,9 +98,9 @@ class OrderServiceTest {
     @Test
     void rejectsUnknownCustomer() {
         UUID id = UUID.randomUUID();
-        when(customerRepository.findById(id)).thenReturn(Optional.empty());
+        when(customerRepository.findByIdAndStoreId(id, STORE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderService.create(new OrderRequest(id, null,
+        assertThatThrownBy(() -> orderService.create(STORE, new OrderRequest(id, null,
                 List.of(new OrderItemRequest(null, "Bolo", null, 1, BigDecimal.TEN)))))
                 .isInstanceOf(ResourceNotFoundException.class);
 
@@ -106,12 +108,39 @@ class OrderServiceTest {
     }
 
     @Test
+    void rejectsCustomerFromAnotherStore() {
+        UUID otherStore = UUID.randomUUID();
+        when(customerRepository.findByIdAndStoreId(customer.getId(), otherStore)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> orderService.create(otherStore, new OrderRequest(customer.getId(), null,
+                List.of(new OrderItemRequest(null, "Bolo", null, 1, BigDecimal.TEN)))))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectsProductFromAnotherStore() {
+        UUID productId = UUID.randomUUID();
+        UUID otherStore = UUID.randomUUID();
+        when(customerRepository.findByIdAndStoreId(customer.getId(), otherStore)).thenReturn(Optional.of(customer));
+        when(productRepository.findByIdAndStoreId(productId, otherStore)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> orderService.create(otherStore, new OrderRequest(customer.getId(), null,
+                List.of(new OrderItemRequest(productId, null, null, 1, null)))))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        verify(productRepository).findByIdAndStoreId(productId, otherStore);
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
     void rejectsUnknownProduct() {
         UUID productId = UUID.randomUUID();
-        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
-        when(productRepository.findById(productId)).thenReturn(Optional.empty());
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
+        when(productRepository.findByIdAndStoreId(productId, STORE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderService.create(new OrderRequest(customer.getId(), null,
+        assertThatThrownBy(() -> orderService.create(STORE, new OrderRequest(customer.getId(), null,
                 List.of(new OrderItemRequest(productId, null, null, 1, null)))))
                 .isInstanceOf(ResourceNotFoundException.class);
 
@@ -120,12 +149,12 @@ class OrderServiceTest {
 
     @Test
     void rejectsInactiveCatalogProduct() {
-        Product product = new Product("Bolo de Cenoura", null, new BigDecimal("45.50"));
+        Product product = new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null);
         product.changeActive(false);
-        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
+        when(productRepository.findByIdAndStoreId(product.getId(), STORE)).thenReturn(Optional.of(product));
 
-        assertThatThrownBy(() -> orderService.create(new OrderRequest(customer.getId(), null,
+        assertThatThrownBy(() -> orderService.create(STORE, new OrderRequest(customer.getId(), null,
                 List.of(new OrderItemRequest(product.getId(), null, null, 1, null)))))
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("inativo");
@@ -135,12 +164,12 @@ class OrderServiceTest {
 
     @Test
     void rejectsCustomItemWithoutNameOrPrice() {
-        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
 
-        assertThatThrownBy(() -> orderService.create(new OrderRequest(customer.getId(), null,
+        assertThatThrownBy(() -> orderService.create(STORE, new OrderRequest(customer.getId(), null,
                 List.of(new OrderItemRequest(null, "  ", null, 1, BigDecimal.TEN)))))
                 .isInstanceOf(BusinessRuleException.class);
-        assertThatThrownBy(() -> orderService.create(new OrderRequest(customer.getId(), null,
+        assertThatThrownBy(() -> orderService.create(STORE, new OrderRequest(customer.getId(), null,
                 List.of(new OrderItemRequest(null, "Bolo", null, 1, null)))))
                 .isInstanceOf(BusinessRuleException.class);
 
@@ -149,9 +178,9 @@ class OrderServiceTest {
 
     @Test
     void rejectsCatalogItemWithOverriddenPrice() {
-        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
 
-        assertThatThrownBy(() -> orderService.create(new OrderRequest(customer.getId(), null,
+        assertThatThrownBy(() -> orderService.create(STORE, new OrderRequest(customer.getId(), null,
                 List.of(new OrderItemRequest(UUID.randomUUID(), null, null, 1, BigDecimal.ONE)))))
                 .isInstanceOf(BusinessRuleException.class);
 
@@ -160,12 +189,12 @@ class OrderServiceTest {
 
     @Test
     void createsOrderWithPendingStatusAndTotalFromAllItems() {
-        Product product = new Product("Bolo de Cenoura", null, new BigDecimal("45.50"));
-        when(customerRepository.findById(customer.getId())).thenReturn(Optional.of(customer));
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        Product product = new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null);
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
+        when(productRepository.findByIdAndStoreId(product.getId(), STORE)).thenReturn(Optional.of(product));
         mockSave();
 
-        Order order = orderService.create(new OrderRequest(customer.getId(), null, List.of(
+        Order order = orderService.create(STORE, new OrderRequest(customer.getId(), null, List.of(
                 new OrderItemRequest(product.getId(), null, null, 3, null),
                 new OrderItemRequest(null, "Docinhos", null, 2, new BigDecimal("120.50")))));
 
@@ -176,20 +205,20 @@ class OrderServiceTest {
 
     @Test
     void changesStatusOfExistingOrder() {
-        Order order = new Order(customer, null);
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        Order order = new Order(STORE, customer, null);
+        when(orderRepository.findByIdAndStoreIdForUpdate(order.getId(), STORE)).thenReturn(Optional.of(order));
 
-        Order result = orderService.changeStatus(order.getId(), OrderStatus.IN_PRODUCTION);
+        Order result = orderService.changeStatus(order.getId(), STORE, OrderStatus.IN_PRODUCTION);
 
         assertThat(result.getStatus()).isEqualTo(OrderStatus.IN_PRODUCTION);
     }
 
     @Test
     void rejectsInvalidStatusTransition() {
-        Order order = new Order(customer, null);
-        when(orderRepository.findByIdForUpdate(order.getId())).thenReturn(Optional.of(order));
+        Order order = new Order(STORE, customer, null);
+        when(orderRepository.findByIdAndStoreIdForUpdate(order.getId(), STORE)).thenReturn(Optional.of(order));
 
-        assertThatThrownBy(() -> orderService.changeStatus(order.getId(), OrderStatus.COMPLETED))
+        assertThatThrownBy(() -> orderService.changeStatus(order.getId(), STORE, OrderStatus.COMPLETED))
                 .isInstanceOf(BusinessRuleException.class);
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
     }
@@ -197,25 +226,25 @@ class OrderServiceTest {
     @Test
     void throwsWhenChangingStatusOfUnknownOrder() {
         UUID id = UUID.randomUUID();
-        when(orderRepository.findByIdForUpdate(id)).thenReturn(Optional.empty());
+        when(orderRepository.findByIdAndStoreIdForUpdate(id, STORE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderService.changeStatus(id, OrderStatus.CANCELLED))
+        assertThatThrownBy(() -> orderService.changeStatus(id, STORE, OrderStatus.CANCELLED))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     void throwsWhenOrderDoesNotExist() {
         UUID id = UUID.randomUUID();
-        when(orderRepository.findById(id)).thenReturn(Optional.empty());
+        when(orderRepository.findByIdAndStoreId(id, STORE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> orderService.findById(id)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> orderService.findById(id, STORE)).isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     void listsAllOrders() {
-        List<Order> orders = List.of(new Order(customer, null), new Order(customer, "x"));
-        when(orderRepository.findAll()).thenReturn(orders);
+        List<Order> orders = List.of(new Order(STORE, customer, null), new Order(STORE, customer, "x"));
+        when(orderRepository.findAllByStoreId(STORE)).thenReturn(orders);
 
-        assertThat(orderService.findAll()).containsExactlyElementsOf(orders);
+        assertThat(orderService.findAll(STORE)).containsExactlyElementsOf(orders);
     }
 }

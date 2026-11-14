@@ -13,6 +13,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,8 +45,9 @@ public class ProductController {
             @ApiResponse(responseCode = "400", description = "Dados inválidos", content = @Content)
     })
     @PostMapping
-    public ResponseEntity<ProductResponse> create(@Valid @RequestBody ProductRequest request) {
-        ProductResponse response = ProductResponse.from(productService.create(request));
+    public ResponseEntity<ProductResponse> create(@AuthenticationPrincipal Jwt jwt,
+                                                  @Valid @RequestBody ProductRequest request) {
+        ProductResponse response = ProductResponse.from(productService.create(storeId(jwt), request));
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -56,9 +59,10 @@ public class ProductController {
     })
     @GetMapping
     public List<ProductResponse> findAll(
+            @AuthenticationPrincipal Jwt jwt,
             @Parameter(description = "Filtra por produtos ativos (true) ou inativos (false)")
             @RequestParam(required = false) Boolean active) {
-        return productService.findAll(active).stream().map(ProductResponse::from).toList();
+        return productService.findAll(storeId(jwt), active).stream().map(ProductResponse::from).toList();
     }
 
     @Operation(summary = "Consulta um produto pelo identificador")
@@ -68,8 +72,8 @@ public class ProductController {
             @ApiResponse(responseCode = "404", description = "Produto não encontrado", content = @Content)
     })
     @GetMapping("/{id}")
-    public ProductResponse findById(@PathVariable UUID id) {
-        return ProductResponse.from(productService.findById(id));
+    public ProductResponse findById(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+        return ProductResponse.from(productService.findById(id, storeId(jwt)));
     }
 
     @Operation(summary = "Atualiza os dados cadastrais do produto",
@@ -81,8 +85,9 @@ public class ProductController {
             @ApiResponse(responseCode = "404", description = "Produto não encontrado", content = @Content)
     })
     @PutMapping("/{id}")
-    public ProductResponse update(@PathVariable UUID id, @Valid @RequestBody ProductRequest request) {
-        return ProductResponse.from(productService.update(id, request));
+    public ProductResponse update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                  @Valid @RequestBody ProductRequest request) {
+        return ProductResponse.from(productService.update(id, storeId(jwt), request));
     }
 
     @Operation(summary = "Ativa ou inativa o produto",
@@ -93,7 +98,12 @@ public class ProductController {
             @ApiResponse(responseCode = "404", description = "Produto não encontrado", content = @Content)
     })
     @PatchMapping("/{id}/active")
-    public ProductResponse changeActive(@PathVariable UUID id, @Valid @RequestBody ProductActiveRequest request) {
-        return ProductResponse.from(productService.changeActive(id, request.active()));
+    public ProductResponse changeActive(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                        @Valid @RequestBody ProductActiveRequest request) {
+        return ProductResponse.from(productService.changeActive(id, storeId(jwt), request.active()));
+    }
+
+    private static UUID storeId(Jwt jwt) {
+        return UUID.fromString(jwt.getClaimAsString("storeId"));
     }
 }

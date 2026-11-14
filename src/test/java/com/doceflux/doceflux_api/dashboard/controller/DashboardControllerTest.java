@@ -10,29 +10,40 @@ import com.doceflux.doceflux_api.order.domain.OrderStatus;
 import com.doceflux.doceflux_api.shared.BusinessRuleException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import com.doceflux.doceflux_api.auth.security.SecurityConfig;
+import com.doceflux.doceflux_api.auth.security.TokenService;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(DashboardController.class)
-@AutoConfigureMockMvc(addFilters = false)
+@Import({SecurityConfig.class, TokenService.class})
 class DashboardControllerTest {
 
     private static final LocalDate START = LocalDate.of(2026, 10, 1);
     private static final LocalDate END = LocalDate.of(2026, 10, 31);
+
+    private static final UUID STORE = UUID.randomUUID();
+
+    private static RequestPostProcessor auth() {
+        return jwt().jwt(j -> j.claim("storeId", STORE.toString()));
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -54,9 +65,9 @@ class DashboardControllerTest {
 
     @Test
     void returnsSummary() throws Exception {
-        when(dashboardService.summary(START, END)).thenReturn(sample());
+        when(dashboardService.summary(STORE, START, END)).thenReturn(sample());
 
-        mockMvc.perform(get("/api/dashboard/summary").param("startDate", "2026-10-01").param("endDate", "2026-10-31"))
+        mockMvc.perform(get("/api/dashboard/summary").with(auth()).param("startDate", "2026-10-01").param("endDate", "2026-10-31"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.startDate").value("2026-10-01"))
                 .andExpect(jsonPath("$.endDate").value("2026-10-31"))
@@ -80,34 +91,34 @@ class DashboardControllerTest {
 
     @Test
     void returnsBadRequestWhenStartDateIsAfterEndDate() throws Exception {
-        when(dashboardService.summary(END, START))
+        when(dashboardService.summary(STORE, END, START))
                 .thenThrow(new BusinessRuleException("A data inicial não pode ser posterior à data final"));
 
-        mockMvc.perform(get("/api/dashboard/summary").param("startDate", "2026-10-31").param("endDate", "2026-10-01"))
+        mockMvc.perform(get("/api/dashboard/summary").with(auth()).param("startDate", "2026-10-31").param("endDate", "2026-10-01"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("A data inicial não pode ser posterior à data final"));
     }
 
     @Test
     void returnsBadRequestWhenStartDateIsMissing() throws Exception {
-        mockMvc.perform(get("/api/dashboard/summary").param("endDate", "2026-10-31"))
+        mockMvc.perform(get("/api/dashboard/summary").with(auth()).param("endDate", "2026-10-31"))
                 .andExpect(status().isBadRequest());
-        verify(dashboardService, never()).summary(any(), any());
+        verify(dashboardService, never()).summary(any(), any(), any());
     }
 
     @Test
     void returnsBadRequestWhenEndDateIsMissing() throws Exception {
-        mockMvc.perform(get("/api/dashboard/summary").param("startDate", "2026-10-01"))
+        mockMvc.perform(get("/api/dashboard/summary").with(auth()).param("startDate", "2026-10-01"))
                 .andExpect(status().isBadRequest());
-        verify(dashboardService, never()).summary(any(), any());
+        verify(dashboardService, never()).summary(any(), any(), any());
     }
 
     @Test
     void returnsBadRequestWhenDateFormatIsInvalid() throws Exception {
-        mockMvc.perform(get("/api/dashboard/summary").param("startDate", "01/10/2026").param("endDate", "2026-10-31"))
+        mockMvc.perform(get("/api/dashboard/summary").with(auth()).param("startDate", "01/10/2026").param("endDate", "2026-10-31"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(get("/api/dashboard/summary").param("startDate", "2026-10-01").param("endDate", "abc"))
+        mockMvc.perform(get("/api/dashboard/summary").with(auth()).param("startDate", "2026-10-01").param("endDate", "abc"))
                 .andExpect(status().isBadRequest());
-        verify(dashboardService, never()).summary(any(), any());
+        verify(dashboardService, never()).summary(any(), any(), any());
     }
 }

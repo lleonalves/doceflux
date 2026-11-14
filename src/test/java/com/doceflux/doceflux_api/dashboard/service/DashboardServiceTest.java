@@ -22,10 +22,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -36,6 +38,8 @@ class DashboardServiceTest {
 
     private static final LocalDate START = LocalDate.of(2026, 10, 1);
     private static final LocalDate END = LocalDate.of(2026, 10, 31);
+
+    private static final UUID STORE = UUID.randomUUID();
 
     @Mock
     private FinancialTransactionRepository transactionRepository;
@@ -60,21 +64,21 @@ class DashboardServiceTest {
     }
 
     private void mockFinance(String incomes, String expenses, long count) {
-        when(transactionRepository.sumAmountByTypeAndPeriod(TransactionType.INCOME, START, END))
+        when(transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(STORE, TransactionType.INCOME, START, END))
                 .thenReturn(incomes == null ? null : new BigDecimal(incomes));
-        when(transactionRepository.sumAmountByTypeAndPeriod(TransactionType.EXPENSE, START, END))
+        when(transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(STORE, TransactionType.EXPENSE, START, END))
                 .thenReturn(expenses == null ? null : new BigDecimal(expenses));
-        when(transactionRepository.countByTransactionDateBetween(START, END)).thenReturn(count);
+        when(transactionRepository.countByStoreIdAndTransactionDateBetween(STORE, START, END)).thenReturn(count);
     }
 
     private void mockOrders(Row... rows) {
-        when(orderRepository.summarizeByStatus(any(), any())).thenReturn(List.of(rows));
+        when(orderRepository.summarizeByStatus(eq(STORE), any(), any())).thenReturn(List.of(rows));
     }
 
     private DashboardSummaryResponse summaryWithOrders(Row... rows) {
         mockFinance(null, null, 0);
         mockOrders(rows);
-        return dashboardService.summary(START, END);
+        return dashboardService.summary(STORE, START, END);
     }
 
     @Test
@@ -82,7 +86,7 @@ class DashboardServiceTest {
         mockFinance("5000.00", "1800.00", 35);
         mockOrders();
 
-        var financial = dashboardService.summary(START, END).financialSummary();
+        var financial = dashboardService.summary(STORE, START, END).financialSummary();
 
         assertThat(financial.totalIncomes()).isEqualByComparingTo("5000.00");
         assertThat(financial.totalExpenses()).isEqualByComparingTo("1800.00");
@@ -95,7 +99,7 @@ class DashboardServiceTest {
         mockFinance("100.00", "250.50", 2);
         mockOrders();
 
-        assertThat(dashboardService.summary(START, END).financialSummary().netBalance())
+        assertThat(dashboardService.summary(STORE, START, END).financialSummary().netBalance())
                 .isEqualByComparingTo("-150.50");
     }
 
@@ -104,7 +108,7 @@ class DashboardServiceTest {
         mockFinance(null, "40.00", 1);
         mockOrders();
 
-        var financial = dashboardService.summary(START, END).financialSummary();
+        var financial = dashboardService.summary(STORE, START, END).financialSummary();
 
         assertThat(financial.totalIncomes()).isEqualByComparingTo("0.00");
         assertThat(financial.netBalance()).isEqualByComparingTo("-40.00");
@@ -115,7 +119,7 @@ class DashboardServiceTest {
         mockFinance("40.00", null, 1);
         mockOrders();
 
-        var financial = dashboardService.summary(START, END).financialSummary();
+        var financial = dashboardService.summary(STORE, START, END).financialSummary();
 
         assertThat(financial.totalExpenses()).isEqualByComparingTo("0.00");
         assertThat(financial.netBalance()).isEqualByComparingTo("40.00");
@@ -126,7 +130,7 @@ class DashboardServiceTest {
         mockFinance(null, null, 0);
         mockOrders();
 
-        var financial = dashboardService.summary(START, END).financialSummary();
+        var financial = dashboardService.summary(STORE, START, END).financialSummary();
 
         assertThat(financial.totalIncomes()).isEqualByComparingTo("0");
         assertThat(financial.totalExpenses()).isEqualByComparingTo("0");
@@ -215,7 +219,7 @@ class DashboardServiceTest {
 
         ArgumentCaptor<Instant> from = ArgumentCaptor.forClass(Instant.class);
         ArgumentCaptor<Instant> to = ArgumentCaptor.forClass(Instant.class);
-        verify(orderRepository).summarizeByStatus(from.capture(), to.capture());
+        verify(orderRepository).summarizeByStatus(eq(STORE), from.capture(), to.capture());
         ZoneId zone = ZoneId.of("America/Sao_Paulo");
         assertThat(from.getValue()).isEqualTo(START.atStartOfDay(zone).toInstant());
         assertThat(to.getValue()).isEqualTo(END.plusDays(1).atStartOfDay(zone).toInstant());
@@ -225,10 +229,10 @@ class DashboardServiceTest {
     void returnsCustomerAndActiveProductCounts() {
         mockFinance(null, null, 0);
         mockOrders();
-        when(customerRepository.count()).thenReturn(120L);
-        when(productRepository.countByActiveTrue()).thenReturn(35L);
+        when(customerRepository.countByStoreId(STORE)).thenReturn(120L);
+        when(productRepository.countByStoreIdAndActiveTrue(STORE)).thenReturn(35L);
 
-        var metrics = dashboardService.summary(START, END).businessMetrics();
+        var metrics = dashboardService.summary(STORE, START, END).businessMetrics();
 
         assertThat(metrics.totalCustomers()).isEqualTo(120);
         assertThat(metrics.activeProductsCount()).isEqualTo(35);
@@ -244,19 +248,19 @@ class DashboardServiceTest {
 
     @Test
     void acceptsSingleDayPeriod() {
-        when(transactionRepository.sumAmountByTypeAndPeriod(any(), any(), any())).thenReturn(null);
+        when(transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(any(), any(), any(), any())).thenReturn(null);
         mockOrders();
 
-        assertThat(dashboardService.summary(START, START).startDate()).isEqualTo(START);
+        assertThat(dashboardService.summary(STORE, START, START).startDate()).isEqualTo(START);
     }
 
     @Test
     void rejectsStartDateAfterEndDate() {
-        assertThatThrownBy(() -> dashboardService.summary(END, START))
+        assertThatThrownBy(() -> dashboardService.summary(STORE, END, START))
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessage("A data inicial não pode ser posterior à data final");
 
         verifyNoInteractions(transactionRepository, orderRepository, customerRepository, productRepository);
-        verify(orderRepository, never()).summarizeByStatus(any(), any());
+        verify(orderRepository, never()).summarizeByStatus(any(), any(), any());
     }
 }

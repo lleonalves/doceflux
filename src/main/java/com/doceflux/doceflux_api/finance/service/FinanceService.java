@@ -33,57 +33,59 @@ public class FinanceService {
     }
 
     @Transactional
-    public FinancialTransaction registerIncome(IncomeRequest request) {
-        if (request.orderId() != null && !orderRepository.existsById(request.orderId())) {
+    public FinancialTransaction registerIncome(UUID storeId, IncomeRequest request) {
+        if (request.orderId() != null && !orderRepository.existsByIdAndStoreId(request.orderId(), storeId)) {
             throw new ResourceNotFoundException("Pedido não encontrado: " + request.orderId());
         }
         return transactionRepository.save(FinancialTransaction.income(
+                storeId,
                 request.description().trim(), request.amount(), request.date(),
                 normalizeCategory(request.category()), request.orderId()));
     }
 
     @Transactional
-    public FinancialTransaction registerExpense(ExpenseRequest request) {
+    public FinancialTransaction registerExpense(UUID storeId, ExpenseRequest request) {
         return transactionRepository.save(FinancialTransaction.expense(
+                storeId,
                 request.description().trim(), request.amount(), request.date(),
                 normalizeCategory(request.category())));
     }
 
     @Transactional(readOnly = true)
-    public List<FinancialTransaction> findAll(TransactionType type, UUID orderId,
+    public List<FinancialTransaction> findAll(UUID storeId, TransactionType type, UUID orderId,
                                               LocalDate startDate, LocalDate endDate) {
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             throw new BusinessRuleException("A data inicial não pode ser posterior à data final");
         }
         return transactionRepository.findAll(
-                FinancialTransactionSpecifications.withFilters(type, orderId, startDate, endDate),
+                FinancialTransactionSpecifications.withFilters(storeId, type, orderId, startDate, endDate),
                 Sort.by(Sort.Order.desc("transactionDate"), Sort.Order.desc("createdAt")));
     }
 
     @Transactional
-    public void delete(UUID id) {
-        transactionRepository.delete(findById(id));
+    public void delete(UUID id, UUID storeId) {
+        transactionRepository.delete(findById(id, storeId));
     }
 
     @Transactional(readOnly = true)
-    public FinancialTransaction findById(UUID id) {
-        return transactionRepository.findById(id)
+    public FinancialTransaction findById(UUID id, UUID storeId) {
+        return transactionRepository.findByIdAndStoreId(id, storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Movimentação não encontrada: " + id));
     }
 
     @Transactional(readOnly = true)
-    public CashFlowResponse cashFlow(LocalDate startDate, LocalDate endDate) {
+    public CashFlowResponse cashFlow(UUID storeId, LocalDate startDate, LocalDate endDate) {
         if (startDate.isAfter(endDate)) {
             throw new BusinessRuleException("A data inicial não pode ser posterior à data final");
         }
-        BigDecimal totalIncome = totalOf(TransactionType.INCOME, startDate, endDate);
-        BigDecimal totalExpense = totalOf(TransactionType.EXPENSE, startDate, endDate);
+        BigDecimal totalIncome = totalOf(storeId, TransactionType.INCOME, startDate, endDate);
+        BigDecimal totalExpense = totalOf(storeId, TransactionType.EXPENSE, startDate, endDate);
         return new CashFlowResponse(startDate, endDate, totalIncome, totalExpense,
                 totalIncome.subtract(totalExpense));
     }
 
-    private BigDecimal totalOf(TransactionType type, LocalDate startDate, LocalDate endDate) {
-        BigDecimal total = transactionRepository.sumAmountByTypeAndPeriod(type, startDate, endDate);
+    private BigDecimal totalOf(UUID storeId, TransactionType type, LocalDate startDate, LocalDate endDate) {
+        BigDecimal total = transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(storeId, type, startDate, endDate);
         return (total == null ? BigDecimal.ZERO : total).setScale(MONEY_SCALE);
     }
 

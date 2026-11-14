@@ -31,6 +31,9 @@ public class Order {
     @Id
     private UUID id;
 
+    @Column(name = "store_id", nullable = false, updatable = false)
+    private UUID storeId;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "customer_id", nullable = false, updatable = false)
     private Customer customer;
@@ -57,8 +60,9 @@ public class Order {
     protected Order() {
     }
 
-    public Order(Customer customer, String description) {
+    public Order(UUID storeId, Customer customer, String description) {
         this.id = UUID.randomUUID();
+        this.storeId = storeId;
         this.customer = customer;
         this.description = description;
         this.status = OrderStatus.PENDING;
@@ -99,6 +103,10 @@ public class Order {
 
     public UUID getId() {
         return id;
+    }
+
+    public UUID getStoreId() {
+        return storeId;
     }
 
     public Customer getCustomer() {

@@ -9,18 +9,24 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface FinancialTransactionRepository
         extends JpaRepository<FinancialTransaction, UUID>, JpaSpecificationExecutor<FinancialTransaction> {
 
-    long countByTransactionDateBetween(LocalDate startDate, LocalDate endDate);
+    Optional<FinancialTransaction> findByIdAndStoreId(UUID id, UUID storeId);
 
     @Query("""
             select sum(t.amount) from FinancialTransaction t
-            where t.type = :type and t.transactionDate between :startDate and :endDate
+            where t.storeId = :storeId and t.type = :type
+              and t.transactionDate between :startDate and :endDate
             """)
-    BigDecimal sumAmountByTypeAndPeriod(@Param("type") TransactionType type,
-                                        @Param("startDate") LocalDate startDate,
-                                        @Param("endDate") LocalDate endDate);
+    BigDecimal sumAmountByStoreIdAndTypeAndPeriod(@Param("storeId") UUID storeId,
+                                                  @Param("type") TransactionType type,
+                                                  @Param("startDate") LocalDate startDate,
+                                                  @Param("endDate") LocalDate endDate);
+
+    long countByStoreIdAndTransactionDateBetween(UUID storeId, LocalDate startDate, LocalDate endDate);
+
 }

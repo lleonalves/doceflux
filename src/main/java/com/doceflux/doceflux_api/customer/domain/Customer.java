@@ -15,6 +15,9 @@ public class Customer {
     @Id
     private UUID id;
 
+    @Column(name = "store_id", nullable = false, updatable = false)
+    private UUID storeId;
+
     @Column(nullable = false, length = 120)
     private String name;
 
@@ -33,8 +36,9 @@ public class Customer {
     protected Customer() {
     }
 
-    public Customer(String name, String phone, String email, String address) {
+    public Customer(UUID storeId, String name, String phone, String email, String address) {
         this.id = UUID.randomUUID();
+        this.storeId = storeId;
         this.name = name;
         this.phone = phone;
         this.email = email;
@@ -51,6 +55,10 @@ public class Customer {
 
     public UUID getId() {
         return id;
+    }
+
+    public UUID getStoreId() {
+        return storeId;
     }
 
     public String getName() {

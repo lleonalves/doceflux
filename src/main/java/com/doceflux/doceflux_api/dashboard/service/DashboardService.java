@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class DashboardService {
@@ -48,34 +49,35 @@ public class DashboardService {
     }
 
     @Transactional(readOnly = true)
-    public DashboardSummaryResponse summary(LocalDate startDate, LocalDate endDate) {
+    public DashboardSummaryResponse summary(UUID storeId, LocalDate startDate, LocalDate endDate) {
         if (startDate.isAfter(endDate)) {
             throw new BusinessRuleException("A data inicial não pode ser posterior à data final");
         }
         return new DashboardSummaryResponse(startDate, endDate,
-                financialSummary(startDate, endDate),
-                ordersSummary(startDate, endDate),
-                new BusinessMetricsDto(customerRepository.count(), productRepository.countByActiveTrue()));
+                financialSummary(storeId, startDate, endDate),
+                ordersSummary(storeId, startDate, endDate),
+                new BusinessMetricsDto(customerRepository.countByStoreId(storeId),
+                        productRepository.countByStoreIdAndActiveTrue(storeId)));
     }
 
-    private FinancialSummaryDto financialSummary(LocalDate startDate, LocalDate endDate) {
-        BigDecimal incomes = totalOf(TransactionType.INCOME, startDate, endDate);
-        BigDecimal expenses = totalOf(TransactionType.EXPENSE, startDate, endDate);
+    private FinancialSummaryDto financialSummary(UUID storeId, LocalDate startDate, LocalDate endDate) {
+        BigDecimal incomes = totalOf(storeId, TransactionType.INCOME, startDate, endDate);
+        BigDecimal expenses = totalOf(storeId, TransactionType.EXPENSE, startDate, endDate);
         return new FinancialSummaryDto(incomes, expenses, incomes.subtract(expenses),
-                transactionRepository.countByTransactionDateBetween(startDate, endDate));
+                transactionRepository.countByStoreIdAndTransactionDateBetween(storeId, startDate, endDate));
     }
 
-    private BigDecimal totalOf(TransactionType type, LocalDate startDate, LocalDate endDate) {
-        BigDecimal total = transactionRepository.sumAmountByTypeAndPeriod(type, startDate, endDate);
+    private BigDecimal totalOf(UUID storeId, TransactionType type, LocalDate startDate, LocalDate endDate) {
+        BigDecimal total = transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(storeId, type, startDate, endDate);
         return (total == null ? BigDecimal.ZERO : total).setScale(MONEY_SCALE, RoundingMode.HALF_UP);
     }
 
-    private OrdersSummaryDto ordersSummary(LocalDate startDate, LocalDate endDate) {
+    private OrdersSummaryDto ordersSummary(UUID storeId, LocalDate startDate, LocalDate endDate) {
         Instant from = startDate.atStartOfDay(BUSINESS_ZONE).toInstant();
         Instant to = endDate.plusDays(1).atStartOfDay(BUSINESS_ZONE).toInstant();
 
         Map<OrderStatus, OrderStatusTotals> byStatus = new EnumMap<>(OrderStatus.class);
-        orderRepository.summarizeByStatus(from, to).forEach(row -> byStatus.put(row.getStatus(), row));
+        orderRepository.summarizeByStatus(storeId, from, to).forEach(row -> byStatus.put(row.getStatus(), row));
 
         List<OrderStatusCountDto> distribution = Arrays.stream(OrderStatus.values())
                 .map(status -> new OrderStatusCountDto(status, countOf(byStatus.get(status))))

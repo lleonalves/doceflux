@@ -11,6 +11,8 @@ public record ProductResponse(
         String name,
         String description,
         BigDecimal price,
+        int stockQuantity,
+        String imageUrl,
         boolean active,
         Instant createdAt,
         Instant updatedAt) {
@@ -21,6 +23,8 @@ public record ProductResponse(
                 product.getName(),
                 product.getDescription(),
                 product.getPrice(),
+                product.getStockQuantity(),
+                product.getImageUrl(),
                 product.isActive(),
                 product.getCreatedAt(),
                 product.getUpdatedAt());

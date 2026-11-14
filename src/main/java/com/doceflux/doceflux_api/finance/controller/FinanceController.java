@@ -14,6 +14,8 @@ import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -40,22 +42,25 @@ public class FinanceController {
     }
 
     @PostMapping("/incomes")
-    public ResponseEntity<TransactionResponse> registerIncome(@Valid @RequestBody IncomeRequest request) {
-        return created(TransactionResponse.from(financeService.registerIncome(request)));
+    public ResponseEntity<TransactionResponse> registerIncome(@AuthenticationPrincipal Jwt jwt,
+                                                              @Valid @RequestBody IncomeRequest request) {
+        return created(TransactionResponse.from(financeService.registerIncome(storeId(jwt), request)));
     }
 
     @PostMapping("/expenses")
-    public ResponseEntity<TransactionResponse> registerExpense(@Valid @RequestBody ExpenseRequest request) {
-        return created(TransactionResponse.from(financeService.registerExpense(request)));
+    public ResponseEntity<TransactionResponse> registerExpense(@AuthenticationPrincipal Jwt jwt,
+                                                               @Valid @RequestBody ExpenseRequest request) {
+        return created(TransactionResponse.from(financeService.registerExpense(storeId(jwt), request)));
     }
 
     @GetMapping("/transactions")
     public List<TransactionResponse> findAll(
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) TransactionType type,
             @RequestParam(required = false) UUID orderId,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        return financeService.findAll(type, orderId, startDate, endDate).stream()
+        return financeService.findAll(storeId(jwt), type, orderId, startDate, endDate).stream()
                 .map(TransactionResponse::from).toList();
     }
 
@@ -67,26 +72,31 @@ public class FinanceController {
             @ApiResponse(responseCode = "400", description = "Identificador inválido", content = @Content),
             @ApiResponse(responseCode = "404", description = "Movimentação não encontrada", content = @Content)
     })
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        financeService.delete(id);
+    public ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+        financeService.delete(id, storeId(jwt));
         return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/transactions/{id}")
-    public TransactionResponse findById(@PathVariable UUID id) {
-        return TransactionResponse.from(financeService.findById(id));
+    public TransactionResponse findById(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
+        return TransactionResponse.from(financeService.findById(id, storeId(jwt)));
     }
 
     @GetMapping("/cash-flow")
     public CashFlowResponse cashFlow(
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        return financeService.cashFlow(startDate, endDate);
+        return financeService.cashFlow(storeId(jwt), startDate, endDate);
     }
 
     private ResponseEntity<TransactionResponse> created(TransactionResponse response) {
         URI location = ServletUriComponentsBuilder.fromCurrentContextPath()
                 .path("/api/finance/transactions/{id}").buildAndExpand(response.id()).toUri();
         return ResponseEntity.status(HttpStatus.CREATED).location(location).body(response);
+    }
+
+    private static UUID storeId(Jwt jwt) {
+        return UUID.fromString(jwt.getClaimAsString("storeId"));
     }
 }

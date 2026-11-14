@@ -21,6 +21,9 @@ public class FinancialTransaction {
     @Id
     private UUID id;
 
+    @Column(name = "store_id", nullable = false, updatable = false)
+    private UUID storeId;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10, updatable = false)
     private TransactionType type;
@@ -49,9 +52,10 @@ public class FinancialTransaction {
     protected FinancialTransaction() {
     }
 
-    private FinancialTransaction(TransactionType type, String description, BigDecimal amount,
+    private FinancialTransaction(UUID storeId, TransactionType type, String description, BigDecimal amount,
                                  LocalDate transactionDate, String category, UUID orderId) {
         this.id = UUID.randomUUID();
+        this.storeId = storeId;
         this.type = type;
         this.description = description;
         this.amount = amount.setScale(MONEY_SCALE);
@@ -62,18 +66,22 @@ public class FinancialTransaction {
         this.updatedAt = this.createdAt;
     }
 
-    public static FinancialTransaction income(String description, BigDecimal amount, LocalDate date,
+    public static FinancialTransaction income(UUID storeId, String description, BigDecimal amount, LocalDate date,
                                               String category, UUID orderId) {
-        return new FinancialTransaction(TransactionType.INCOME, description, amount, date, category, orderId);
+        return new FinancialTransaction(storeId, TransactionType.INCOME, description, amount, date, category, orderId);
     }
 
-    public static FinancialTransaction expense(String description, BigDecimal amount, LocalDate date,
+    public static FinancialTransaction expense(UUID storeId, String description, BigDecimal amount, LocalDate date,
                                                String category) {
-        return new FinancialTransaction(TransactionType.EXPENSE, description, amount, date, category, null);
+        return new FinancialTransaction(storeId, TransactionType.EXPENSE, description, amount, date, category, null);
     }
 
     public UUID getId() {
         return id;
+    }
+
+    public UUID getStoreId() {
+        return storeId;
     }
 
     public TransactionType getType() {

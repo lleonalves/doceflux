@@ -10,11 +10,14 @@ import com.doceflux.doceflux_api.shared.BusinessRuleException;
 import com.doceflux.doceflux_api.shared.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import com.doceflux.doceflux_api.auth.security.SecurityConfig;
+import com.doceflux.doceflux_api.auth.security.TokenService;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.test.web.servlet.ResultActions;
 
 import java.math.BigDecimal;
@@ -22,9 +25,11 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -33,10 +38,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(OrderController.class)
-@AutoConfigureMockMvc(addFilters = false)
+@Import({SecurityConfig.class, TokenService.class})
 class OrderControllerTest {
 
     private static final String CUSTOMER_ID = "11111111-1111-1111-1111-111111111111";
+
+    private static final UUID STORE = UUID.randomUUID();
+    private static final UUID OTHER_STORE = UUID.randomUUID();
+
+    private static RequestPostProcessor auth() {
+        return auth(STORE);
+    }
+
+    private static RequestPostProcessor auth(UUID storeId) {
+        return jwt().jwt(j -> j.claim("storeId", storeId.toString()));
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -45,7 +61,7 @@ class OrderControllerTest {
     private OrderService orderService;
 
     private ResultActions postOrder(String json) throws Exception {
-        return mockMvc.perform(post("/api/orders")
+        return mockMvc.perform(post("/api/orders").with(auth())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json));
     }
@@ -54,12 +70,12 @@ class OrderControllerTest {
         postOrder(json)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors['" + field + "']").value(message));
-        verify(orderService, never()).create(any());
+        verify(orderService, never()).create(any(), any());
     }
 
     private Order sampleOrder() {
-        Order order = new Order(new Customer("Maria", "11999999999", null, null), "Retirada sábado");
-        order.addItem(OrderItem.fromCatalog(new Product("Bolo", null, new BigDecimal("45.50")), null, 2));
+        Order order = new Order(STORE, new Customer(STORE, "Maria", "11999999999", null, null), "Retirada sábado");
+        order.addItem(OrderItem.fromCatalog(new Product(UUID.randomUUID(), "Bolo", null, new BigDecimal("45.50"), 0, null), null, 2));
         order.addItem(OrderItem.custom("Docinhos", "Cento", 1, new BigDecimal("80.00")));
         return order;
     }
@@ -67,7 +83,7 @@ class OrderControllerTest {
     @Test
     void createsOrder() throws Exception {
         Order order = sampleOrder();
-        when(orderService.create(any())).thenReturn(order);
+        when(orderService.create(eq(STORE), any())).thenReturn(order);
 
         postOrder("""
                 {"customerId":"%s","items":[{"name":"Docinhos","quantity":1,"unitPrice":80.00}]}
@@ -133,7 +149,7 @@ class OrderControllerTest {
 
     @Test
     void returnsNotFoundWhenCustomerDoesNotExist() throws Exception {
-        when(orderService.create(any()))
+        when(orderService.create(eq(STORE), any()))
                 .thenThrow(new ResourceNotFoundException("Cliente não encontrado: " + CUSTOMER_ID));
 
         postOrder("""
@@ -145,7 +161,7 @@ class OrderControllerTest {
 
     @Test
     void returnsBadRequestOnBusinessRuleViolation() throws Exception {
-        when(orderService.create(any()))
+        when(orderService.create(eq(STORE), any()))
                 .thenThrow(new BusinessRuleException("O nome é obrigatório para itens personalizados"));
 
         postOrder("""
@@ -158,9 +174,9 @@ class OrderControllerTest {
     @Test
     void returnsExistingOrder() throws Exception {
         Order order = sampleOrder();
-        when(orderService.findById(order.getId())).thenReturn(order);
+        when(orderService.findById(order.getId(), STORE)).thenReturn(order);
 
-        mockMvc.perform(get("/api/orders/{id}", order.getId()))
+        mockMvc.perform(get("/api/orders/{id}", order.getId()).with(auth()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(order.getId().toString()))
                 .andExpect(jsonPath("$.items.length()").value(2));
@@ -169,18 +185,18 @@ class OrderControllerTest {
     @Test
     void returnsNotFoundForUnknownOrder() throws Exception {
         UUID id = UUID.randomUUID();
-        when(orderService.findById(id)).thenThrow(new ResourceNotFoundException("Pedido não encontrado: " + id));
+        when(orderService.findById(id, STORE)).thenThrow(new ResourceNotFoundException("Pedido não encontrado: " + id));
 
-        mockMvc.perform(get("/api/orders/{id}", id))
+        mockMvc.perform(get("/api/orders/{id}", id).with(auth()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("Pedido não encontrado: " + id));
     }
 
     @Test
     void listsOrders() throws Exception {
-        when(orderService.findAll()).thenReturn(List.of(sampleOrder(), sampleOrder()));
+        when(orderService.findAll(STORE)).thenReturn(List.of(sampleOrder(), sampleOrder()));
 
-        mockMvc.perform(get("/api/orders"))
+        mockMvc.perform(get("/api/orders").with(auth()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].status").value("PENDING"))
@@ -191,16 +207,16 @@ class OrderControllerTest {
     @Test
     void returnsStatusAndTotalOnSingleOrder() throws Exception {
         Order order = sampleOrder();
-        when(orderService.findById(order.getId())).thenReturn(order);
+        when(orderService.findById(order.getId(), STORE)).thenReturn(order);
 
-        mockMvc.perform(get("/api/orders/{id}", order.getId()))
+        mockMvc.perform(get("/api/orders/{id}", order.getId()).with(auth()))
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.totalAmount").value(171.00))
                 .andExpect(jsonPath("$.description").value("Retirada sábado"));
     }
 
     private ResultActions patchStatus(Object id, String json) throws Exception {
-        return mockMvc.perform(patch("/api/orders/{id}/status", id)
+        return mockMvc.perform(patch("/api/orders/{id}/status", id).with(auth())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json));
     }
@@ -209,7 +225,7 @@ class OrderControllerTest {
     void changesOrderStatus() throws Exception {
         Order order = sampleOrder();
         order.changeStatus(OrderStatus.IN_PRODUCTION);
-        when(orderService.changeStatus(order.getId(), OrderStatus.IN_PRODUCTION)).thenReturn(order);
+        when(orderService.changeStatus(order.getId(), STORE, OrderStatus.IN_PRODUCTION)).thenReturn(order);
 
         patchStatus(order.getId(), "{\"status\":\"IN_PRODUCTION\"}")
                 .andExpect(status().isOk())
@@ -220,7 +236,7 @@ class OrderControllerTest {
     @Test
     void returnsBadRequestOnInvalidTransition() throws Exception {
         UUID id = UUID.randomUUID();
-        when(orderService.changeStatus(id, OrderStatus.COMPLETED))
+        when(orderService.changeStatus(id, STORE, OrderStatus.COMPLETED))
                 .thenThrow(new BusinessRuleException("Transição de status inválida: PENDING -> COMPLETED"));
 
         patchStatus(id, "{\"status\":\"COMPLETED\"}")
@@ -231,7 +247,7 @@ class OrderControllerTest {
     @Test
     void returnsNotFoundWhenChangingStatusOfUnknownOrder() throws Exception {
         UUID id = UUID.randomUUID();
-        when(orderService.changeStatus(id, OrderStatus.CANCELLED))
+        when(orderService.changeStatus(id, STORE, OrderStatus.CANCELLED))
                 .thenThrow(new ResourceNotFoundException("Pedido não encontrado: " + id));
 
         patchStatus(id, "{\"status\":\"CANCELLED\"}")
@@ -247,6 +263,16 @@ class OrderControllerTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors.status").value("O status é obrigatório"));
         patchStatus(id, "{\"status\":\"SHIPPED\"}").andExpect(status().isBadRequest());
-        verify(orderService, never()).changeStatus(any(), any());
+        verify(orderService, never()).changeStatus(any(), any(), any());
+    }
+
+    @Test
+    void orderOfAnotherStoreReturnsNotFound() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(orderService.findById(id, OTHER_STORE)).thenThrow(new ResourceNotFoundException("Pedido não encontrado: " + id));
+
+        mockMvc.perform(get("/api/orders/{id}", id).with(auth(OTHER_STORE)))
+                .andExpect(status().isNotFound());
+        verify(orderService).findById(id, OTHER_STORE);
     }
 }

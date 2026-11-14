@@ -20,8 +20,9 @@ public class CustomerService {
     }
 
     @Transactional
-    public Customer create(CustomerRequest request) {
+    public Customer create(UUID storeId, CustomerRequest request) {
         Customer customer = new Customer(
+                storeId,
                 request.name().trim(),
                 request.phone().trim(),
                 request.email(),
@@ -30,23 +31,23 @@ public class CustomerService {
     }
 
     @Transactional(readOnly = true)
-    public List<Customer> findAll() {
-        return customerRepository.findAll();
+    public List<Customer> findAll(UUID storeId) {
+        return customerRepository.findAllByStoreId(storeId);
     }
 
     @Transactional(readOnly = true)
-    public List<Customer> search(String search) {
+    public List<Customer> search(UUID storeId, String search) {
         String term = search == null ? "" : search.trim();
         if (term.isEmpty()) {
-            return findAll();
+            return findAll(storeId);
         }
         String digits = term.replaceAll("\\D", "");
-        return customerRepository.searchByNameOrPhone(term, digits);
+        return customerRepository.searchByNameOrPhone(storeId, term, digits);
     }
 
     @Transactional
-    public Customer update(UUID id, CustomerRequest request) {
-        Customer customer = findById(id);
+    public Customer update(UUID id, UUID storeId, CustomerRequest request) {
+        Customer customer = findById(id, storeId);
         customer.update(
                 request.name().trim(),
                 request.phone().trim(),
@@ -56,8 +57,8 @@ public class CustomerService {
     }
 
     @Transactional(readOnly = true)
-    public Customer findById(UUID id) {
-        return customerRepository.findById(id)
+    public Customer findById(UUID id, UUID storeId) {
+        return customerRepository.findByIdAndStoreId(id, storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Cliente não encontrado: " + id));
     }
 }

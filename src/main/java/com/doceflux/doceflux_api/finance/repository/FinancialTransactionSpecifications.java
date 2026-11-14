@@ -16,9 +16,10 @@ public final class FinancialTransactionSpecifications {
     }
 
     public static Specification<FinancialTransaction> withFilters(
-            TransactionType type, UUID orderId, LocalDate startDate, LocalDate endDate) {
+            UUID storeId, TransactionType type, UUID orderId, LocalDate startDate, LocalDate endDate) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("storeId"), storeId));
             if (type != null) {
                 predicates.add(cb.equal(root.get("type"), type));
             }

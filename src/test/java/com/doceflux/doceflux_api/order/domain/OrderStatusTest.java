@@ -7,6 +7,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -14,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class OrderStatusTest {
 
     private Order orderIn(OrderStatus target) {
-        Order order = new Order(new Customer("Maria", "11999999999", null, null), null);
+        Order order = new Order(UUID.randomUUID(), new Customer(UUID.randomUUID(), "Maria", "11999999999", null, null), null);
         switch (target) {
             case PENDING -> { }
             case IN_PRODUCTION -> order.changeStatus(OrderStatus.IN_PRODUCTION);

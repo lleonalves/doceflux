@@ -13,6 +13,7 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,7 +36,7 @@ class ProductRepositoryTest {
 
     @Test
     void persistsAndRetrievesProductWithExactPrice() {
-        Product saved = productRepository.saveAndFlush(new Product("Bolo", null, new BigDecimal("45.50")));
+        Product saved = productRepository.saveAndFlush(new Product(UUID.randomUUID(), "Bolo", null, new BigDecimal("45.50"), 0, null));
 
         Product found = productRepository.findById(saved.getId()).orElseThrow();
 
@@ -48,27 +49,33 @@ class ProductRepositoryTest {
     }
 
     @Test
-    void filtersProductsByActiveStatus() {
-        Product active = productRepository.save(new Product("Filtro Ativo", null, new BigDecimal("10.00")));
-        Product inactive = productRepository.save(new Product("Filtro Inativo", null, new BigDecimal("10.00")));
+    void filtersProductsByStoreAndActiveStatus() {
+        UUID store = UUID.randomUUID();
+        Product active = productRepository.save(new Product(store, "Filtro Ativo", null, new BigDecimal("10.00"), 0, null));
+        Product inactive = productRepository.save(new Product(store, "Filtro Inativo", null, new BigDecimal("10.00"), 0, null));
+        Product otherStore = productRepository.save(new Product(UUID.randomUUID(), "Outra Loja", null, new BigDecimal("10.00"), 0, null));
         inactive.changeActive(false);
         productRepository.flush();
         entityManager.clear();
 
-        assertThat(productRepository.findByActive(true)).extracting(Product::getId)
-                .contains(active.getId()).doesNotContain(inactive.getId());
-        assertThat(productRepository.findByActive(false)).extracting(Product::getId)
-                .contains(inactive.getId()).doesNotContain(active.getId());
+        assertThat(productRepository.findByStoreId(store)).extracting(Product::getId)
+                .containsExactlyInAnyOrder(active.getId(), inactive.getId());
+        assertThat(productRepository.findByStoreIdAndActive(store, true)).extracting(Product::getId)
+                .containsExactly(active.getId());
+        assertThat(productRepository.findByStoreIdAndActive(store, false)).extracting(Product::getId)
+                .containsExactly(inactive.getId());
+        assertThat(productRepository.findByIdAndStoreId(active.getId(), store)).isPresent();
+        assertThat(productRepository.findByIdAndStoreId(otherStore.getId(), store)).isEmpty();
     }
 
     @Test
     void persistsUpdateAndActiveChangeKeepingCreationDate() {
-        Product saved = productRepository.saveAndFlush(new Product("Antigo", "Desc", new BigDecimal("10.00")));
+        Product saved = productRepository.saveAndFlush(new Product(UUID.randomUUID(), "Antigo", "Desc", new BigDecimal("10.00"), 0, null));
         entityManager.clear();
         Product loaded = productRepository.findById(saved.getId()).orElseThrow();
         Instant createdAt = loaded.getCreatedAt();
 
-        loaded.update("Novo", null, new BigDecimal("12.50"));
+        loaded.update("Novo", null, new BigDecimal("12.50"), 0, null);
         loaded.changeActive(false);
         productRepository.flush();
         entityManager.clear();
@@ -83,15 +90,15 @@ class ProductRepositoryTest {
 
     @Test
     void editingOrDeactivatingProductDoesNotChangeExistingOrderSnapshots() {
-        Product product = productRepository.save(new Product("Bolo Original", null, new BigDecimal("40.00")));
-        Customer customer = customerRepository.save(new Customer("Maria", "11999999999", null, null));
-        Order order = new Order(customer, "Pedido");
+        Product product = productRepository.save(new Product(UUID.randomUUID(), "Bolo Original", null, new BigDecimal("40.00"), 0, null));
+        Customer customer = customerRepository.save(new Customer(UUID.randomUUID(), "Maria", "11999999999", null, null));
+        Order order = new Order(UUID.randomUUID(), customer, "Pedido");
         order.addItem(OrderItem.fromCatalog(product, null, 2));
         orderRepository.saveAndFlush(order);
         entityManager.clear();
 
         Product loaded = productRepository.findById(product.getId()).orElseThrow();
-        loaded.update("Bolo Renomeado", null, new BigDecimal("99.00"));
+        loaded.update("Bolo Renomeado", null, new BigDecimal("99.00"), 0, null);
         loaded.changeActive(false);
         productRepository.flush();
         entityManager.clear();

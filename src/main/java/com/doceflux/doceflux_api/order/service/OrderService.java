@@ -34,46 +34,46 @@ public class OrderService {
     }
 
     @Transactional
-    public Order create(OrderRequest request) {
-        Customer customer = customerRepository.findById(request.customerId())
+    public Order create(UUID storeId, OrderRequest request) {
+        Customer customer = customerRepository.findByIdAndStoreId(request.customerId(), storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Cliente não encontrado: " + request.customerId()));
 
-        Order order = new Order(customer, request.description());
-        request.items().forEach(item -> order.addItem(toOrderItem(item)));
+        Order order = new Order(storeId, customer, request.description());
+        request.items().forEach(item -> order.addItem(toOrderItem(item, storeId)));
         return orderRepository.save(order);
     }
 
     @Transactional(readOnly = true)
-    public List<Order> findAll() {
-        return orderRepository.findAll();
+    public List<Order> findAll(UUID storeId) {
+        return orderRepository.findAllByStoreId(storeId);
     }
 
     @Transactional(readOnly = true)
-    public Order findById(UUID id) {
-        return orderRepository.findById(id)
+    public Order findById(UUID id, UUID storeId) {
+        return orderRepository.findByIdAndStoreId(id, storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Pedido não encontrado: " + id));
     }
 
     @Transactional
-    public Order changeStatus(UUID id, OrderStatus status) {
-        Order order = orderRepository.findByIdForUpdate(id)
+    public Order changeStatus(UUID id, UUID storeId, OrderStatus status) {
+        Order order = orderRepository.findByIdAndStoreIdForUpdate(id, storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Pedido não encontrado: " + id));
         order.changeStatus(status);
         return order;
     }
 
-    private OrderItem toOrderItem(OrderItemRequest item) {
+    private OrderItem toOrderItem(OrderItemRequest item, UUID storeId) {
         if (item.productId() != null) {
-            return catalogItem(item);
+            return catalogItem(item, storeId);
         }
         return customItem(item);
     }
 
-    private OrderItem catalogItem(OrderItemRequest item) {
+    private OrderItem catalogItem(OrderItemRequest item, UUID storeId) {
         if (item.name() != null || item.unitPrice() != null) {
             throw new BusinessRuleException("Item de catálogo não aceita nome ou preço unitário informados");
         }
-        Product product = productRepository.findById(item.productId())
+        Product product = productRepository.findByIdAndStoreId(item.productId(), storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado: " + item.productId()));
         if (!product.isActive()) {
             throw new BusinessRuleException(

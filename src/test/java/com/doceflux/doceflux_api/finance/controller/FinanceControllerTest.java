@@ -6,9 +6,12 @@ import com.doceflux.doceflux_api.finance.dto.CashFlowResponse;
 import com.doceflux.doceflux_api.finance.service.FinanceService;
 import com.doceflux.doceflux_api.shared.BusinessRuleException;
 import com.doceflux.doceflux_api.shared.ResourceNotFoundException;
+import com.doceflux.doceflux_api.auth.security.SecurityConfig;
+import com.doceflux.doceflux_api.auth.security.TokenService;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -21,10 +24,12 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -33,10 +38,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(FinanceController.class)
-@AutoConfigureMockMvc(addFilters = false)
+@Import({SecurityConfig.class, TokenService.class})
 class FinanceControllerTest {
 
     private static final String TODAY = LocalDate.now().toString();
+
+    private static final UUID STORE = UUID.randomUUID();
+    private static final UUID OTHER_STORE = UUID.randomUUID();
+
+    private static RequestPostProcessor auth() {
+        return auth(STORE);
+    }
+
+    private static RequestPostProcessor auth(UUID storeId) {
+        return jwt().jwt(j -> j.claim("storeId", storeId.toString()));
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -45,7 +61,7 @@ class FinanceControllerTest {
     private FinanceService financeService;
 
     private ResultActions post(String url, String json) throws Exception {
-        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(url)
+        return mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(url).with(auth())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json));
     }
@@ -54,22 +70,22 @@ class FinanceControllerTest {
         post("/api/finance/incomes", json)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors." + field).value(message));
-        verify(financeService, never()).registerIncome(any());
+        verify(financeService, never()).registerIncome(any(), any());
     }
 
     private void assertExpenseRejected(String json, String field, String message) throws Exception {
         post("/api/finance/expenses", json)
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors." + field).value(message));
-        verify(financeService, never()).registerExpense(any());
+        verify(financeService, never()).registerExpense(any(), any());
     }
 
     @Test
     void registersIncome() throws Exception {
         UUID orderId = UUID.randomUUID();
-        FinancialTransaction income = FinancialTransaction.income(
+        FinancialTransaction income = FinancialTransaction.income(STORE, 
                 "Sinal", new BigDecimal("30.00"), LocalDate.now(), "Encomendas", orderId);
-        when(financeService.registerIncome(any())).thenReturn(income);
+        when(financeService.registerIncome(eq(STORE), any())).thenReturn(income);
 
         post("/api/finance/incomes", """
                 {"description":"Sinal","amount":30.00,"date":"%s","category":"Encomendas","orderId":"%s"}
@@ -119,7 +135,7 @@ class FinanceControllerTest {
     @Test
     void returnsNotFoundWhenIncomeOrderDoesNotExist() throws Exception {
         UUID orderId = UUID.randomUUID();
-        when(financeService.registerIncome(any()))
+        when(financeService.registerIncome(eq(STORE), any()))
                 .thenThrow(new ResourceNotFoundException("Pedido não encontrado: " + orderId));
 
         post("/api/finance/incomes", """
@@ -131,9 +147,9 @@ class FinanceControllerTest {
 
     @Test
     void registersExpense() throws Exception {
-        FinancialTransaction expense = FinancialTransaction.expense(
+        FinancialTransaction expense = FinancialTransaction.expense(STORE, 
                 "Farinha", new BigDecimal("120.00"), LocalDate.now(), "Insumos");
-        when(financeService.registerExpense(any())).thenReturn(expense);
+        when(financeService.registerExpense(eq(STORE), any())).thenReturn(expense);
 
         post("/api/finance/expenses", """
                 {"description":"Farinha","amount":120.00,"date":"%s","category":"Insumos"}
@@ -172,11 +188,11 @@ class FinanceControllerTest {
 
     @Test
     void listsTransactions() throws Exception {
-        when(financeService.findAll(null, null, null, null)).thenReturn(List.of(
-                FinancialTransaction.expense("Farinha", new BigDecimal("10.00"), LocalDate.now(), null),
-                FinancialTransaction.income("Venda", new BigDecimal("40.00"), LocalDate.now(), null, null)));
+        when(financeService.findAll(STORE, null, null, null, null)).thenReturn(List.of(
+                FinancialTransaction.expense(STORE, "Farinha", new BigDecimal("10.00"), LocalDate.now(), null),
+                FinancialTransaction.income(STORE, "Venda", new BigDecimal("40.00"), LocalDate.now(), null, null)));
 
-        mockMvc.perform(get("/api/finance/transactions"))
+        mockMvc.perform(get("/api/finance/transactions").with(auth()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].type").value("EXPENSE"))
@@ -188,10 +204,10 @@ class FinanceControllerTest {
         UUID orderId = UUID.randomUUID();
         LocalDate start = LocalDate.of(2026, 10, 1);
         LocalDate end = LocalDate.of(2026, 10, 31);
-        when(financeService.findAll(TransactionType.INCOME, orderId, start, end)).thenReturn(List.of(
-                FinancialTransaction.income("Sinal", new BigDecimal("30.00"), start, null, orderId)));
+        when(financeService.findAll(STORE, TransactionType.INCOME, orderId, start, end)).thenReturn(List.of(
+                FinancialTransaction.income(STORE, "Sinal", new BigDecimal("30.00"), start, null, orderId)));
 
-        mockMvc.perform(get("/api/finance/transactions")
+        mockMvc.perform(get("/api/finance/transactions").with(auth())
                         .param("type", "INCOME")
                         .param("orderId", orderId.toString())
                         .param("startDate", "2026-10-01")
@@ -204,9 +220,9 @@ class FinanceControllerTest {
     @Test
     void returnsEmptyListWhenFiltersMatchNothing() throws Exception {
         UUID orderId = UUID.randomUUID();
-        when(financeService.findAll(TransactionType.EXPENSE, orderId, null, null)).thenReturn(List.of());
+        when(financeService.findAll(STORE, TransactionType.EXPENSE, orderId, null, null)).thenReturn(List.of());
 
-        mockMvc.perform(get("/api/finance/transactions")
+        mockMvc.perform(get("/api/finance/transactions").with(auth())
                         .param("type", "EXPENSE").param("orderId", orderId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
@@ -214,10 +230,10 @@ class FinanceControllerTest {
 
     @Test
     void rejectsListingWithStartAfterEnd() throws Exception {
-        when(financeService.findAll(any(), any(), any(), any()))
+        when(financeService.findAll(any(), any(), any(), any(), any()))
                 .thenThrow(new BusinessRuleException("A data inicial não pode ser posterior à data final"));
 
-        mockMvc.perform(get("/api/finance/transactions")
+        mockMvc.perform(get("/api/finance/transactions").with(auth())
                         .param("startDate", "2026-11-01").param("endDate", "2026-10-01"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("A data inicial não pode ser posterior à data final"));
@@ -225,55 +241,55 @@ class FinanceControllerTest {
 
     @Test
     void rejectsListingWithInvalidFilterFormats() throws Exception {
-        mockMvc.perform(get("/api/finance/transactions").param("type", "OUTRO"))
+        mockMvc.perform(get("/api/finance/transactions").with(auth()).param("type", "OUTRO"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(get("/api/finance/transactions").param("orderId", "nao-e-uuid"))
+        mockMvc.perform(get("/api/finance/transactions").with(auth()).param("orderId", "nao-e-uuid"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(get("/api/finance/transactions").param("startDate", "01/10/2026"))
+        mockMvc.perform(get("/api/finance/transactions").with(auth()).param("startDate", "01/10/2026"))
                 .andExpect(status().isBadRequest());
-        mockMvc.perform(get("/api/finance/transactions").param("endDate", "amanha"))
+        mockMvc.perform(get("/api/finance/transactions").with(auth()).param("endDate", "amanha"))
                 .andExpect(status().isBadRequest());
 
-        verify(financeService, never()).findAll(any(), any(), any(), any());
+        verify(financeService, never()).findAll(any(), any(), any(), any(), any());
     }
 
     @Test
     void deletesTransaction() throws Exception {
         UUID id = UUID.randomUUID();
 
-        mockMvc.perform(delete("/api/finance/transactions/{id}", id))
+        mockMvc.perform(delete("/api/finance/transactions/{id}", id).with(auth()))
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""));
 
-        verify(financeService).delete(id);
+        verify(financeService).delete(id, STORE);
     }
 
     @Test
     void deleteReturnsNotFoundForUnknownTransaction() throws Exception {
         UUID id = UUID.randomUUID();
         doThrow(new ResourceNotFoundException("Movimentação não encontrada: " + id))
-                .when(financeService).delete(id);
+                .when(financeService).delete(id, STORE);
 
-        mockMvc.perform(delete("/api/finance/transactions/{id}", id))
+        mockMvc.perform(delete("/api/finance/transactions/{id}", id).with(auth()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("Movimentação não encontrada: " + id));
     }
 
     @Test
     void deleteRejectsInvalidUuid() throws Exception {
-        mockMvc.perform(delete("/api/finance/transactions/{id}", "nao-e-uuid"))
+        mockMvc.perform(delete("/api/finance/transactions/{id}", "nao-e-uuid").with(auth()))
                 .andExpect(status().isBadRequest());
 
-        verify(financeService, never()).delete(any());
+        verify(financeService, never()).delete(any(), any());
     }
 
     @Test
     void returnsExistingTransaction() throws Exception {
-        FinancialTransaction transaction = FinancialTransaction.expense(
+        FinancialTransaction transaction = FinancialTransaction.expense(STORE, 
                 "Farinha", new BigDecimal("10.00"), LocalDate.now(), null);
-        when(financeService.findById(transaction.getId())).thenReturn(transaction);
+        when(financeService.findById(transaction.getId(), STORE)).thenReturn(transaction);
 
-        mockMvc.perform(get("/api/finance/transactions/{id}", transaction.getId()))
+        mockMvc.perform(get("/api/finance/transactions/{id}", transaction.getId()).with(auth()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(transaction.getId().toString()));
     }
@@ -281,10 +297,10 @@ class FinanceControllerTest {
     @Test
     void returnsNotFoundForUnknownTransaction() throws Exception {
         UUID id = UUID.randomUUID();
-        when(financeService.findById(id))
+        when(financeService.findById(id, STORE))
                 .thenThrow(new ResourceNotFoundException("Movimentação não encontrada: " + id));
 
-        mockMvc.perform(get("/api/finance/transactions/{id}", id))
+        mockMvc.perform(get("/api/finance/transactions/{id}", id).with(auth()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.detail").value("Movimentação não encontrada: " + id));
     }
@@ -293,10 +309,10 @@ class FinanceControllerTest {
     void returnsCashFlow() throws Exception {
         LocalDate start = LocalDate.of(2026, 10, 1);
         LocalDate end = LocalDate.of(2026, 10, 31);
-        when(financeService.cashFlow(start, end)).thenReturn(new CashFlowResponse(
+        when(financeService.cashFlow(STORE, start, end)).thenReturn(new CashFlowResponse(
                 start, end, new BigDecimal("300.00"), new BigDecimal("100.50"), new BigDecimal("199.50")));
 
-        mockMvc.perform(get("/api/finance/cash-flow").param("startDate", "2026-10-01").param("endDate", "2026-10-31"))
+        mockMvc.perform(get("/api/finance/cash-flow").with(auth()).param("startDate", "2026-10-01").param("endDate", "2026-10-31"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.startDate").value("2026-10-01"))
                 .andExpect(jsonPath("$.endDate").value("2026-10-31"))
@@ -307,17 +323,28 @@ class FinanceControllerTest {
 
     @Test
     void rejectsInvalidCashFlowPeriod() throws Exception {
-        when(financeService.cashFlow(any(), any()))
+        when(financeService.cashFlow(any(), any(), any()))
                 .thenThrow(new BusinessRuleException("A data inicial não pode ser posterior à data final"));
 
-        mockMvc.perform(get("/api/finance/cash-flow").param("startDate", "2026-11-01").param("endDate", "2026-10-01"))
+        mockMvc.perform(get("/api/finance/cash-flow").with(auth()).param("startDate", "2026-11-01").param("endDate", "2026-10-01"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.detail").value("A data inicial não pode ser posterior à data final"));
     }
 
     @Test
     void rejectsCashFlowWithoutPeriod() throws Exception {
-        mockMvc.perform(get("/api/finance/cash-flow"))
+        mockMvc.perform(get("/api/finance/cash-flow").with(auth()))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void transactionOfAnotherStoreReturnsNotFound() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(financeService.findById(id, OTHER_STORE))
+                .thenThrow(new ResourceNotFoundException("Movimentação não encontrada: " + id));
+
+        mockMvc.perform(get("/api/finance/transactions/{id}", id).with(auth(OTHER_STORE)))
+                .andExpect(status().isNotFound());
+        verify(financeService).findById(id, OTHER_STORE);
     }
 }

@@ -22,41 +22,46 @@ public class ProductService {
     }
 
     @Transactional
-    public Product create(ProductRequest request) {
+    public Product create(UUID storeId, ProductRequest request) {
         Product product = new Product(
+                storeId,
                 request.name().trim(),
                 request.description(),
-                request.price().setScale(PRICE_SCALE));
+                request.price().setScale(PRICE_SCALE),
+                request.stockQuantity(),
+                request.imageUrl());
         return productRepository.save(product);
     }
 
     @Transactional(readOnly = true)
-    public List<Product> findAll(Boolean active) {
+    public List<Product> findAll(UUID storeId, Boolean active) {
         if (active == null) {
-            return productRepository.findAll();
+            return productRepository.findByStoreId(storeId);
         }
-        return productRepository.findByActive(active);
+        return productRepository.findByStoreIdAndActive(storeId, active);
     }
 
     @Transactional(readOnly = true)
-    public Product findById(UUID id) {
-        return productRepository.findById(id)
+    public Product findById(UUID id, UUID storeId) {
+        return productRepository.findByIdAndStoreId(id, storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado: " + id));
     }
 
     @Transactional
-    public Product update(UUID id, ProductRequest request) {
-        Product product = findById(id);
+    public Product update(UUID id, UUID storeId, ProductRequest request) {
+        Product product = findById(id, storeId);
         product.update(
                 request.name().trim(),
                 request.description(),
-                request.price().setScale(PRICE_SCALE));
+                request.price().setScale(PRICE_SCALE),
+                request.stockQuantity(),
+                request.imageUrl());
         return product;
     }
 
     @Transactional
-    public Product changeActive(UUID id, boolean active) {
-        Product product = findById(id);
+    public Product changeActive(UUID id, UUID storeId, boolean active) {
+        Product product = findById(id, storeId);
         product.changeActive(active);
         return product;
     }

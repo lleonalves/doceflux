@@ -16,6 +16,9 @@ public class Product {
     @Id
     private UUID id;
 
+    @Column(name = "store_id", nullable = false, updatable = false)
+    private UUID storeId;
+
     @Column(nullable = false, length = 120)
     private String name;
 
@@ -24,6 +27,12 @@ public class Product {
 
     @Column(nullable = false, precision = 12, scale = 2)
     private BigDecimal price;
+
+    @Column(name = "stock_quantity", nullable = false)
+    private int stockQuantity;
+
+    @Column(name = "image_url", length = 2048)
+    private String imageUrl;
 
     @Column(nullable = false)
     private boolean active = true;
@@ -37,8 +46,12 @@ public class Product {
     protected Product() {
     }
 
-    public Product(String name, String description, BigDecimal price) {
+    public Product(UUID storeId, String name, String description, BigDecimal price,
+                   int stockQuantity, String imageUrl) {
         this.id = UUID.randomUUID();
+        this.storeId = storeId;
+        this.stockQuantity = stockQuantity;
+        this.imageUrl = imageUrl;
         this.name = name;
         this.description = description;
         this.price = price;
@@ -47,7 +60,10 @@ public class Product {
         this.updatedAt = this.createdAt;
     }
 
-    public void update(String name, String description, BigDecimal price) {
+    public void update(String name, String description, BigDecimal price,
+                       int stockQuantity, String imageUrl) {
+        this.stockQuantity = stockQuantity;
+        this.imageUrl = imageUrl;
         this.name = name;
         this.description = description;
         this.price = price;
@@ -61,6 +77,18 @@ public class Product {
 
     public UUID getId() {
         return id;
+    }
+
+    public UUID getStoreId() {
+        return storeId;
+    }
+
+    public int getStockQuantity() {
+        return stockQuantity;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
     }
 
     public String getName() {

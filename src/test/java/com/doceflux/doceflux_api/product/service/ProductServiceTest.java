@@ -37,8 +37,8 @@ class ProductServiceTest {
     void createsActiveProductWithGeneratedIdAndTimestamps() {
         when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        Product created = productService.create(
-                new ProductRequest("  Bolo de Cenoura ", "Com cobertura", new BigDecimal("45.5")));
+        Product created = productService.create(UUID.randomUUID(),
+                new ProductRequest("  Bolo de Cenoura ", "Com cobertura", new BigDecimal("45.5"), 5, null));
 
         assertThat(created.getId()).isNotNull();
         assertThat(created.getName()).isEqualTo("Bolo de Cenoura");
@@ -52,60 +52,67 @@ class ProductServiceTest {
 
     @Test
     void listsAllProducts() {
+        UUID storeId = UUID.randomUUID();
         List<Product> products = List.of(
-                new Product("Brigadeiro", null, new BigDecimal("3.00")),
-                new Product("Bolo", null, new BigDecimal("40.00")));
-        when(productRepository.findAll()).thenReturn(products);
+                new Product(storeId, "Brigadeiro", null, new BigDecimal("3.00"), 0, null),
+                new Product(storeId, "Bolo", null, new BigDecimal("40.00"), 0, null));
+        when(productRepository.findByStoreId(storeId)).thenReturn(products);
 
-        assertThat(productService.findAll(null)).containsExactlyElementsOf(products);
-        verify(productRepository, never()).findByActive(anyBoolean());
+        assertThat(productService.findAll(storeId, null)).containsExactlyElementsOf(products);
+        verify(productRepository, never()).findByStoreIdAndActive(any(), anyBoolean());
     }
 
     @Test
     void listsOnlyActiveOrOnlyInactiveProducts() {
-        Product active = new Product("Bolo", null, new BigDecimal("40.00"));
-        Product inactive = new Product("Torta", null, new BigDecimal("30.00"));
+        Product active = new Product(UUID.randomUUID(), "Bolo", null, new BigDecimal("40.00"), 0, null);
+        Product inactive = new Product(UUID.randomUUID(), "Torta", null, new BigDecimal("30.00"), 0, null);
         inactive.changeActive(false);
-        when(productRepository.findByActive(true)).thenReturn(List.of(active));
-        when(productRepository.findByActive(false)).thenReturn(List.of(inactive));
+        UUID storeId = UUID.randomUUID();
+        when(productRepository.findByStoreIdAndActive(storeId, true)).thenReturn(List.of(active));
+        when(productRepository.findByStoreIdAndActive(storeId, false)).thenReturn(List.of(inactive));
 
-        assertThat(productService.findAll(true)).containsExactly(active);
-        assertThat(productService.findAll(false)).containsExactly(inactive);
-        verify(productRepository, never()).findAll();
+        assertThat(productService.findAll(storeId, true)).containsExactly(active);
+        assertThat(productService.findAll(storeId, false)).containsExactly(inactive);
+        verify(productRepository, never()).findByStoreId(any());
     }
 
     @Test
     void findsExistingProductById() {
-        Product product = new Product("Bolo", null, new BigDecimal("40.00"));
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        UUID storeId = UUID.randomUUID();
+        Product product = new Product(storeId, "Bolo", null, new BigDecimal("40.00"), 0, null);
+        when(productRepository.findByIdAndStoreId(product.getId(), storeId)).thenReturn(Optional.of(product));
 
-        assertThat(productService.findById(product.getId())).isSameAs(product);
+        assertThat(productService.findById(product.getId(), storeId)).isSameAs(product);
     }
 
     @Test
     void throwsWhenProductDoesNotExist() {
+        UUID storeId = UUID.randomUUID();
         UUID id = UUID.randomUUID();
-        when(productRepository.findById(id)).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndStoreId(id, storeId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> productService.findById(id)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> productService.findById(id, storeId)).isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     void updatesRegistrationDataPreservingActiveStatus() throws InterruptedException {
-        Product product = new Product("Bolo", null, new BigDecimal("40.00"));
+        UUID storeId = UUID.randomUUID();
+        Product product = new Product(storeId, "Bolo", null, new BigDecimal("40.00"), 0, null);
         product.changeActive(false);
         Instant createdAt = product.getCreatedAt();
         Instant updatedBefore = product.getUpdatedAt();
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        when(productRepository.findByIdAndStoreId(product.getId(), storeId)).thenReturn(Optional.of(product));
         Thread.sleep(2);
 
-        Product updated = productService.update(product.getId(),
-                new ProductRequest("  Bolo Premium ", "Com cobertura", new BigDecimal("55.5")));
+        Product updated = productService.update(product.getId(), storeId,
+                new ProductRequest("  Bolo Premium ", "Com cobertura", new BigDecimal("55.5"), 5, null));
 
         assertThat(updated.getName()).isEqualTo("Bolo Premium");
         assertThat(updated.getDescription()).isEqualTo("Com cobertura");
         assertThat(updated.getPrice()).isEqualByComparingTo("55.50");
         assertThat(updated.getPrice().scale()).isEqualTo(2);
+        assertThat(updated.getStockQuantity()).isEqualTo(5);
+        assertThat(updated.getStoreId()).isEqualTo(storeId);
         assertThat(updated.isActive()).isFalse();
         assertThat(updated.getCreatedAt()).isEqualTo(createdAt);
         assertThat(updated.getUpdatedAt()).isAfter(updatedBefore);
@@ -114,28 +121,31 @@ class ProductServiceTest {
 
     @Test
     void updateThrowsWhenProductDoesNotExist() {
+        UUID storeId = UUID.randomUUID();
         UUID id = UUID.randomUUID();
-        when(productRepository.findById(id)).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndStoreId(id, storeId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> productService.update(id, new ProductRequest("Bolo", null, BigDecimal.TEN)))
+        assertThatThrownBy(() -> productService.update(id, storeId, new ProductRequest("Bolo", null, BigDecimal.TEN, 5, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     void deactivatesAndReactivatesProduct() {
-        Product product = new Product("Bolo", null, new BigDecimal("40.00"));
-        when(productRepository.findById(product.getId())).thenReturn(Optional.of(product));
+        UUID storeId = UUID.randomUUID();
+        Product product = new Product(storeId, "Bolo", null, new BigDecimal("40.00"), 0, null);
+        when(productRepository.findByIdAndStoreId(product.getId(), storeId)).thenReturn(Optional.of(product));
 
-        assertThat(productService.changeActive(product.getId(), false).isActive()).isFalse();
-        assertThat(productService.changeActive(product.getId(), true).isActive()).isTrue();
+        assertThat(productService.changeActive(product.getId(), storeId, false).isActive()).isFalse();
+        assertThat(productService.changeActive(product.getId(), storeId, true).isActive()).isTrue();
     }
 
     @Test
     void changeActiveThrowsWhenProductDoesNotExist() {
+        UUID storeId = UUID.randomUUID();
         UUID id = UUID.randomUUID();
-        when(productRepository.findById(id)).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndStoreId(id, storeId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> productService.changeActive(id, false))
+        assertThatThrownBy(() -> productService.changeActive(id, storeId, false))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 }

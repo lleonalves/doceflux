@@ -39,6 +39,8 @@ class FinanceServiceTest {
     private static final LocalDate START = LocalDate.of(2026, 10, 1);
     private static final LocalDate END = LocalDate.of(2026, 10, 31);
 
+    private static final UUID STORE = UUID.randomUUID();
+
     @Mock
     private FinancialTransactionRepository transactionRepository;
 
@@ -56,7 +58,7 @@ class FinanceServiceTest {
     void registersIncomeWithoutOrder() {
         mockSave();
 
-        FinancialTransaction income = financeService.registerIncome(
+        FinancialTransaction income = financeService.registerIncome(STORE,
                 new IncomeRequest(" Venda balcão ", new BigDecimal("50.5"), START, "  Vendas ", null));
 
         assertThat(income.getId()).isNotNull();
@@ -74,24 +76,24 @@ class FinanceServiceTest {
     @Test
     void registersIncomeLinkedToExistingOrderAndCreatesOnlyOneTransaction() {
         UUID orderId = UUID.randomUUID();
-        when(orderRepository.existsById(orderId)).thenReturn(true);
+        when(orderRepository.existsByIdAndStoreId(orderId, STORE)).thenReturn(true);
         mockSave();
 
-        FinancialTransaction income = financeService.registerIncome(
+        FinancialTransaction income = financeService.registerIncome(STORE,
                 new IncomeRequest("Sinal", new BigDecimal("30.00"), START, null, orderId));
 
         assertThat(income.getOrderId()).isEqualTo(orderId);
         verify(transactionRepository, times(1)).save(any());
-        verify(orderRepository).existsById(orderId);
+        verify(orderRepository).existsByIdAndStoreId(orderId, STORE);
         verify(orderRepository, never()).save(any());
     }
 
     @Test
     void rejectsIncomeLinkedToUnknownOrder() {
         UUID orderId = UUID.randomUUID();
-        when(orderRepository.existsById(orderId)).thenReturn(false);
+        when(orderRepository.existsByIdAndStoreId(orderId, STORE)).thenReturn(false);
 
-        assertThatThrownBy(() -> financeService.registerIncome(
+        assertThatThrownBy(() -> financeService.registerIncome(STORE,
                 new IncomeRequest("Sinal", BigDecimal.TEN, START, null, orderId)))
                 .isInstanceOf(ResourceNotFoundException.class);
 
@@ -102,7 +104,7 @@ class FinanceServiceTest {
     void registersExpenseWithoutOrder() {
         mockSave();
 
-        FinancialTransaction expense = financeService.registerExpense(
+        FinancialTransaction expense = financeService.registerExpense(STORE,
                 new ExpenseRequest("Farinha", new BigDecimal("120"), START, "Insumos"));
 
         assertThat(expense.getType()).isEqualTo(TransactionType.EXPENSE);
@@ -115,18 +117,18 @@ class FinanceServiceTest {
     @Test
     void throwsWhenTransactionDoesNotExist() {
         UUID id = UUID.randomUUID();
-        when(transactionRepository.findById(id)).thenReturn(Optional.empty());
+        when(transactionRepository.findByIdAndStoreId(id, STORE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> financeService.findById(id)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> financeService.findById(id, STORE)).isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void listsTransactionsWithoutFiltersOrderedByDateAndCreation() {
-        List<FinancialTransaction> all = List.of(FinancialTransaction.expense("Farinha", BigDecimal.TEN, START, null));
+        List<FinancialTransaction> all = List.of(FinancialTransaction.expense(STORE, "Farinha", BigDecimal.TEN, START, null));
         when(transactionRepository.findAll(any(Specification.class), any(Sort.class))).thenReturn(all);
 
-        assertThat(financeService.findAll(null, null, null, null)).isEqualTo(all);
+        assertThat(financeService.findAll(STORE, null, null, null, null)).isEqualTo(all);
 
         ArgumentCaptor<Sort> sort = ArgumentCaptor.forClass(Sort.class);
         verify(transactionRepository).findAll(any(Specification.class), sort.capture());
@@ -139,10 +141,10 @@ class FinanceServiceTest {
     void listsTransactionsWithCombinedFilters() {
         UUID orderId = UUID.randomUUID();
         List<FinancialTransaction> found = List.of(
-                FinancialTransaction.income("Sinal", BigDecimal.TEN, START, null, orderId));
+                FinancialTransaction.income(STORE, "Sinal", BigDecimal.TEN, START, null, orderId));
         when(transactionRepository.findAll(any(Specification.class), any(Sort.class))).thenReturn(found);
 
-        assertThat(financeService.findAll(TransactionType.INCOME, orderId, START, END)).isEqualTo(found);
+        assertThat(financeService.findAll(STORE, TransactionType.INCOME, orderId, START, END)).isEqualTo(found);
     }
 
     @Test
@@ -150,14 +152,14 @@ class FinanceServiceTest {
     void acceptsSingleDayPeriodAndOpenEndedPeriods() {
         when(transactionRepository.findAll(any(Specification.class), any(Sort.class))).thenReturn(List.of());
 
-        assertThat(financeService.findAll(null, null, START, START)).isEmpty();
-        assertThat(financeService.findAll(null, null, START, null)).isEmpty();
-        assertThat(financeService.findAll(null, null, null, END)).isEmpty();
+        assertThat(financeService.findAll(STORE, null, null, START, START)).isEmpty();
+        assertThat(financeService.findAll(STORE, null, null, START, null)).isEmpty();
+        assertThat(financeService.findAll(STORE, null, null, null, END)).isEmpty();
     }
 
     @Test
     void rejectsListingWithStartAfterEnd() {
-        assertThatThrownBy(() -> financeService.findAll(null, null, END, START))
+        assertThatThrownBy(() -> financeService.findAll(STORE, null, null, END, START))
                 .isInstanceOf(BusinessRuleException.class);
 
         verifyNoInteractions(transactionRepository);
@@ -166,10 +168,10 @@ class FinanceServiceTest {
     @Test
     void deletesExistingTransactionLinkedToOrderWithoutTouchingTheOrder() {
         UUID orderId = UUID.randomUUID();
-        FinancialTransaction income = FinancialTransaction.income("Sinal", BigDecimal.TEN, START, null, orderId);
-        when(transactionRepository.findById(income.getId())).thenReturn(Optional.of(income));
+        FinancialTransaction income = FinancialTransaction.income(STORE, "Sinal", BigDecimal.TEN, START, null, orderId);
+        when(transactionRepository.findByIdAndStoreId(income.getId(), STORE)).thenReturn(Optional.of(income));
 
-        financeService.delete(income.getId());
+        financeService.delete(income.getId(), STORE);
 
         verify(transactionRepository).delete(income);
         verifyNoInteractions(orderRepository);
@@ -178,21 +180,21 @@ class FinanceServiceTest {
     @Test
     void deleteThrowsWhenTransactionDoesNotExist() {
         UUID id = UUID.randomUUID();
-        when(transactionRepository.findById(id)).thenReturn(Optional.empty());
+        when(transactionRepository.findByIdAndStoreId(id, STORE)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> financeService.delete(id)).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> financeService.delete(id, STORE)).isInstanceOf(ResourceNotFoundException.class);
 
         verify(transactionRepository, never()).delete(any(FinancialTransaction.class));
     }
 
     @Test
     void calculatesCashFlowBalanceWithBigDecimal() {
-        when(transactionRepository.sumAmountByTypeAndPeriod(TransactionType.INCOME, START, END))
+        when(transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(STORE, TransactionType.INCOME, START, END))
                 .thenReturn(new BigDecimal("300.10"));
-        when(transactionRepository.sumAmountByTypeAndPeriod(TransactionType.EXPENSE, START, END))
+        when(transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(STORE, TransactionType.EXPENSE, START, END))
                 .thenReturn(new BigDecimal("100.20"));
 
-        CashFlowResponse cashFlow = financeService.cashFlow(START, END);
+        CashFlowResponse cashFlow = financeService.cashFlow(STORE, START, END);
 
         assertThat(cashFlow.startDate()).isEqualTo(START);
         assertThat(cashFlow.endDate()).isEqualTo(END);
@@ -203,9 +205,9 @@ class FinanceServiceTest {
 
     @Test
     void returnsZeroedCashFlowForPeriodWithoutTransactions() {
-        when(transactionRepository.sumAmountByTypeAndPeriod(any(), any(), any())).thenReturn(null);
+        when(transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(any(), any(), any(), any())).thenReturn(null);
 
-        CashFlowResponse cashFlow = financeService.cashFlow(START, END);
+        CashFlowResponse cashFlow = financeService.cashFlow(STORE, START, END);
 
         assertThat(cashFlow.totalIncome()).isEqualByComparingTo("0.00");
         assertThat(cashFlow.totalExpense()).isEqualByComparingTo("0.00");
@@ -214,17 +216,17 @@ class FinanceServiceTest {
 
     @Test
     void reportsNegativeBalanceWhenExpensesExceedIncome() {
-        when(transactionRepository.sumAmountByTypeAndPeriod(TransactionType.INCOME, START, END))
+        when(transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(STORE, TransactionType.INCOME, START, END))
                 .thenReturn(new BigDecimal("10.00"));
-        when(transactionRepository.sumAmountByTypeAndPeriod(TransactionType.EXPENSE, START, END))
+        when(transactionRepository.sumAmountByStoreIdAndTypeAndPeriod(STORE, TransactionType.EXPENSE, START, END))
                 .thenReturn(new BigDecimal("25.50"));
 
-        assertThat(financeService.cashFlow(START, END).balance()).isEqualByComparingTo("-15.50");
+        assertThat(financeService.cashFlow(STORE, START, END).balance()).isEqualByComparingTo("-15.50");
     }
 
     @Test
     void rejectsPeriodWithStartAfterEnd() {
-        assertThatThrownBy(() -> financeService.cashFlow(END, START)).isInstanceOf(BusinessRuleException.class);
+        assertThatThrownBy(() -> financeService.cashFlow(STORE, END, START)).isInstanceOf(BusinessRuleException.class);
 
         verifyNoInteractions(transactionRepository);
     }
