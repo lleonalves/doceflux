@@ -2,6 +2,7 @@ package com.doceflux.doceflux_api.customer.controller;
 
 import com.doceflux.doceflux_api.customer.domain.Customer;
 import com.doceflux.doceflux_api.customer.service.CustomerService;
+import com.doceflux.doceflux_api.shared.BusinessRuleException;
 import com.doceflux.doceflux_api.shared.ResourceNotFoundException;
 import com.doceflux.doceflux_api.auth.security.SecurityConfig;
 import com.doceflux.doceflux_api.auth.security.TokenService;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -228,5 +230,26 @@ class CustomerControllerTest {
         mockMvc.perform(get("/api/customers/{id}", id).with(auth(OTHER_STORE)))
                 .andExpect(status().isNotFound());
         verify(customerService).findById(id, OTHER_STORE);
+    }
+
+    @Test
+    void deletesCustomer() throws Exception {
+        UUID id = UUID.randomUUID();
+
+        mockMvc.perform(delete("/api/customers/" + id).with(auth()))
+                .andExpect(status().isNoContent());
+
+        verify(customerService).delete(id, STORE);
+    }
+
+    @Test
+    void rejectsDeletingCustomerWithOrders() throws Exception {
+        UUID id = UUID.randomUUID();
+        org.mockito.Mockito.doThrow(new BusinessRuleException("Não é possível excluir um cliente que já possui pedidos registrados."))
+                .when(customerService).delete(id, STORE);
+
+        mockMvc.perform(delete("/api/customers/" + id).with(auth()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Não é possível excluir um cliente que já possui pedidos registrados."));
     }
 }

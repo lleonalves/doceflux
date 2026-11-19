@@ -3,6 +3,8 @@ package com.doceflux.doceflux_api.customer.service;
 import com.doceflux.doceflux_api.customer.domain.Customer;
 import com.doceflux.doceflux_api.customer.dto.CustomerRequest;
 import com.doceflux.doceflux_api.customer.repository.CustomerRepository;
+import com.doceflux.doceflux_api.order.repository.OrderRepository;
+import com.doceflux.doceflux_api.shared.BusinessRuleException;
 import com.doceflux.doceflux_api.shared.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,9 +16,11 @@ import java.util.UUID;
 public class CustomerService {
 
     private final CustomerRepository customerRepository;
+    private final OrderRepository orderRepository;
 
-    public CustomerService(CustomerRepository customerRepository) {
+    public CustomerService(CustomerRepository customerRepository, OrderRepository orderRepository) {
         this.customerRepository = customerRepository;
+        this.orderRepository = orderRepository;
     }
 
     @Transactional
@@ -54,6 +58,15 @@ public class CustomerService {
                 request.email(),
                 request.address());
         return customer;
+    }
+
+    @Transactional
+    public void delete(UUID id, UUID storeId) {
+        Customer customer = findById(id, storeId);
+        if (orderRepository.existsByCustomerIdAndStoreId(id, storeId)) {
+            throw new BusinessRuleException("Não é possível excluir um cliente que já possui pedidos registrados.");
+        }
+        customerRepository.delete(customer);
     }
 
     @Transactional(readOnly = true)

@@ -23,6 +23,8 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
 
     boolean existsByIdAndStoreId(UUID id, UUID storeId);
 
+    boolean existsByCustomerIdAndStoreId(UUID customerId, UUID storeId);
+
     @Query("""
             select o.status as status, count(o) as count, coalesce(sum(o.totalAmount), 0) as totalAmount
             from Order o

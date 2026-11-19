@@ -1,0 +1,13 @@
+# Sem valores de fallback: o profile prod não inicia se alguma variável estiver ausente.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    show-sql: false
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET}

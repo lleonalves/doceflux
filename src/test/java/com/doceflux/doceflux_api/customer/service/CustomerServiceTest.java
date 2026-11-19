@@ -3,6 +3,8 @@ package com.doceflux.doceflux_api.customer.service;
 import com.doceflux.doceflux_api.customer.domain.Customer;
 import com.doceflux.doceflux_api.customer.dto.CustomerRequest;
 import com.doceflux.doceflux_api.customer.repository.CustomerRepository;
+import com.doceflux.doceflux_api.order.repository.OrderRepository;
+import com.doceflux.doceflux_api.shared.BusinessRuleException;
 import com.doceflux.doceflux_api.shared.ResourceNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +31,9 @@ class CustomerServiceTest {
 
     @Mock
     private CustomerRepository customerRepository;
+
+    @Mock
+    private OrderRepository orderRepository;
 
     @InjectMocks
     private CustomerService customerService;
@@ -139,5 +144,28 @@ class CustomerServiceTest {
 
         assertThat(customerService.search(STORE, " Maria ")).isEmpty();
         verify(customerRepository).searchByNameOrPhone(STORE, "Maria", "");
+    }
+
+    @Test
+    void deletesCustomerWithoutOrders() {
+        Customer customer = new Customer(STORE, "Maria", "11999999999", null, null);
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
+        when(orderRepository.existsByCustomerIdAndStoreId(customer.getId(), STORE)).thenReturn(false);
+
+        customerService.delete(customer.getId(), STORE);
+
+        verify(customerRepository).delete(customer);
+    }
+
+    @Test
+    void refusesToDeleteCustomerWithOrders() {
+        Customer customer = new Customer(STORE, "Maria", "11999999999", null, null);
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
+        when(orderRepository.existsByCustomerIdAndStoreId(customer.getId(), STORE)).thenReturn(true);
+
+        assertThatThrownBy(() -> customerService.delete(customer.getId(), STORE))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessage("Não é possível excluir um cliente que já possui pedidos registrados.");
+        verify(customerRepository, never()).delete(any(Customer.class));
     }
 }
