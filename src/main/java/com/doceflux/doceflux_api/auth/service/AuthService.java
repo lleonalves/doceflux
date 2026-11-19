@@ -39,9 +39,6 @@ public class AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         String email = normalizeEmail(request.email());
-        if (storeRepository.count() > 0) {
-            throw new BusinessRuleException("Já existe uma loja cadastrada neste sistema");
-        }
         if (userRepository.existsByEmail(email)) {
             throw new BusinessRuleException("O email informado já está em uso");
         }

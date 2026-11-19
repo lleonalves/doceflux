@@ -31,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -72,7 +73,6 @@ class AuthServiceTest {
 
     @Test
     void registersStoreAndOwnerWithEncodedPassword() {
-        when(storeRepository.count()).thenReturn(0L);
         when(userRepository.existsByEmail("maria@email.com")).thenReturn(false);
         mockSaves();
 
@@ -102,7 +102,6 @@ class AuthServiceTest {
 
     @Test
     void acceptsCompanyStartDateOfToday() {
-        when(storeRepository.count()).thenReturn(0L);
         when(userRepository.existsByEmail("maria@email.com")).thenReturn(false);
         mockSaves();
 
@@ -110,19 +109,23 @@ class AuthServiceTest {
     }
 
     @Test
-    void rejectsSecondStore() {
-        when(storeRepository.count()).thenReturn(1L);
+    void registersTwoDistinctStoresWithIsolatedStoreIds() {
+        when(userRepository.existsByEmail(any())).thenReturn(false);
+        mockSaves();
 
-        assertThatThrownBy(() -> authService.register(registerRequest(START_DATE)))
-                .isInstanceOf(BusinessRuleException.class);
+        AuthResponse first = authService.register(registerRequest(START_DATE));
+        AuthResponse second = authService.register(new RegisterRequest(
+                "Bolos da Ana", "Ana", "Ana", START_DATE, "ana@email.com", "segredo123"));
 
-        verify(storeRepository, never()).save(any());
-        verify(userRepository, never()).save(any());
+        assertThat(first.storeId()).isNotNull().isNotEqualTo(second.storeId());
+        assertThat(second.storeName()).isEqualTo("Bolos da Ana");
+        assertThat(first.accessToken()).isNotBlank();
+        assertThat(second.accessToken()).isNotBlank();
+        verify(storeRepository, times(2)).save(any(Store.class));
     }
 
     @Test
     void rejectsDuplicateEmail() {
-        when(storeRepository.count()).thenReturn(0L);
         when(userRepository.existsByEmail("maria@email.com")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.register(registerRequest(START_DATE)))
@@ -134,7 +137,6 @@ class AuthServiceTest {
 
     @Test
     void rejectsFutureCompanyStartDate() {
-        when(storeRepository.count()).thenReturn(0L);
         when(userRepository.existsByEmail("maria@email.com")).thenReturn(false);
 
         assertThatThrownBy(() -> authService.register(registerRequest(LocalDate.now().plusDays(1))))

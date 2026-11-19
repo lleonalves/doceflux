@@ -96,11 +96,11 @@ class AuthControllerTest {
 
     @Test
     void returnsBadRequestWhenBusinessRuleFails() throws Exception {
-        when(authService.register(any())).thenThrow(new BusinessRuleException("Já existe uma loja cadastrada"));
+        when(authService.register(any())).thenThrow(new BusinessRuleException("O email informado já está em uso"));
 
         postJson("/api/auth/register", VALID_REGISTER)
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("Já existe uma loja cadastrada"));
+                .andExpect(jsonPath("$.detail").value("O email informado já está em uso"));
     }
 
     @Test
