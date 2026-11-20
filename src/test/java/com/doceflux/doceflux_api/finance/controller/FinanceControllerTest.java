@@ -1,5 +1,6 @@
 package com.doceflux.doceflux_api.finance.controller;
 
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 import com.doceflux.doceflux_api.finance.domain.FinancialTransaction;
 import com.doceflux.doceflux_api.finance.domain.TransactionType;
 import com.doceflux.doceflux_api.finance.dto.CashFlowResponse;
@@ -126,10 +127,31 @@ class FinanceControllerTest {
     }
 
     @Test
-    void rejectsIncomeWithFutureDate() throws Exception {
-        assertIncomeRejected("""
-                {"description":"x","amount":10,"date":"%s"}
-                """.formatted(LocalDate.now().plusDays(1)), "date", "A data de recebimento não pode ser futura");
+    void acceptsIncomeAndExpenseWithFutureDate() throws Exception {
+        String future = LocalDate.now().plusMonths(2).toString();
+        when(financeService.registerIncome(eq(STORE), any())).thenReturn(
+                FinancialTransaction.income(STORE, "x", BigDecimal.TEN, LocalDate.now().plusMonths(2), null, null));
+        when(financeService.registerExpense(eq(STORE), any())).thenReturn(
+                FinancialTransaction.expense(STORE, "x", BigDecimal.TEN, LocalDate.now().plusMonths(2), null));
+
+        post("/api/finance/incomes", "{\"description\":\"x\",\"amount\":10,\"date\":\"" + future + "\"}")
+                .andExpect(status().isCreated());
+        post("/api/finance/expenses", "{\"description\":\"x\",\"amount\":10,\"date\":\"" + future + "\"}")
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void acceptsUpdateWithFutureDate() throws Exception {
+        UUID id = UUID.randomUUID();
+        String future = LocalDate.now().plusDays(10).toString();
+        when(financeService.update(eq(id), eq(STORE), any())).thenReturn(
+                FinancialTransaction.expense(STORE, "x", BigDecimal.TEN, LocalDate.now().plusDays(10), null));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/finance/transactions/{id}", id).with(auth())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"x\",\"amount\":10,\"date\":\"" + future + "\"}"))
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -181,9 +203,6 @@ class FinanceControllerTest {
         assertExpenseRejected("""
                 {"description":"x","amount":-5,"date":"%s"}
                 """.formatted(TODAY), "amount", "O valor deve ser maior que zero");
-        assertExpenseRejected("""
-                {"description":"x","amount":10,"date":"%s"}
-                """.formatted(LocalDate.now().plusDays(1)), "date", "A data da despesa não pode ser futura");
     }
 
     @Test
@@ -346,5 +365,53 @@ class FinanceControllerTest {
         mockMvc.perform(get("/api/finance/transactions/{id}", id).with(auth(OTHER_STORE)))
                 .andExpect(status().isNotFound());
         verify(financeService).findById(id, OTHER_STORE);
+    }
+
+    @Test
+    void updatesTransaction() throws Exception {
+        UUID id = UUID.randomUUID();
+        FinancialTransaction updated = FinancialTransaction.expense(STORE, "Farinha", new BigDecimal("12.00"),
+                LocalDate.now(), "Insumos");
+        when(financeService.update(eq(id), eq(STORE), any())).thenReturn(updated);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/finance/transactions/{id}", id).with(auth())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"Farinha\",\"amount\":12.00,\"date\":\"" + TODAY
+                                + "\",\"category\":\"Insumos\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.description").value("Farinha"));
+    }
+
+    @Test
+    void updateRejectsInvalidBody() throws Exception {
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .put("/api/finance/transactions/{id}", UUID.randomUUID()).with(auth())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"description\":\"\",\"amount\":0,\"date\":\"" + TODAY + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(financeService, never()).update(any(), any(), any());
+    }
+
+    @Test
+    void deletesPeriodOfAuthenticatedStore() throws Exception {
+        mockMvc.perform(delete("/api/finance/transactions")
+                        .param("startDate", "2026-10-01").param("endDate", "2026-10-31").with(auth()))
+                .andExpect(status().isNoContent());
+
+        verify(financeService).deleteByPeriod(STORE, LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 31));
+    }
+
+    @Test
+    void periodDeletionRequiresBothDatesAndValidRange() throws Exception {
+        mockMvc.perform(delete("/api/finance/transactions").param("startDate", "2026-10-01").with(auth()))
+                .andExpect(status().isBadRequest());
+
+        doThrow(new BusinessRuleException("A data inicial não pode ser posterior à data final"))
+                .when(financeService).deleteByPeriod(any(), any(), any());
+        mockMvc.perform(delete("/api/finance/transactions")
+                        .param("startDate", "2026-11-01").param("endDate", "2026-10-01").with(auth()))
+                .andExpect(status().isBadRequest());
     }
 }

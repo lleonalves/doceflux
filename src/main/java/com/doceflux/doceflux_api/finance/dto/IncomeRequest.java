@@ -4,7 +4,6 @@ import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -22,7 +21,6 @@ public record IncomeRequest(
         BigDecimal amount,
 
         @NotNull(message = "A data de recebimento é obrigatória")
-        @PastOrPresent(message = "A data de recebimento não pode ser futura")
         LocalDate date,
 
         @Size(max = 60, message = "A categoria deve ter no máximo 60 caracteres")

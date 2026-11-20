@@ -1,5 +1,6 @@
 package com.doceflux.doceflux_api.order.service;
 
+import com.doceflux.doceflux_api.finance.service.FinanceService;
 import com.doceflux.doceflux_api.customer.domain.Customer;
 import com.doceflux.doceflux_api.customer.repository.CustomerRepository;
 import com.doceflux.doceflux_api.order.domain.Order;
@@ -28,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,6 +46,9 @@ class OrderServiceTest {
 
     @Mock
     private ProductRepository productRepository;
+
+    @Mock
+    private FinanceService financeService;
 
     @InjectMocks
     private OrderService orderService;
@@ -315,5 +320,28 @@ class OrderServiceTest {
         when(orderRepository.findAllByStoreId(STORE)).thenReturn(orders);
 
         assertThat(orderService.findAll(STORE)).containsExactlyElementsOf(orders);
+    }
+
+    @Test
+    void completingOrderRegistersRevenueOnce() {
+        Product product = stockedProduct(7);
+        Order order = orderWithCatalogItem(product, 3);
+        order.changeStatus(OrderStatus.IN_PRODUCTION);
+        when(orderRepository.findByIdAndStoreIdForUpdate(order.getId(), STORE)).thenReturn(Optional.of(order));
+
+        orderService.changeStatus(order.getId(), STORE, OrderStatus.COMPLETED);
+
+        verify(financeService).registerOrderRevenue(STORE, order.getId(), "Maria", new BigDecimal("136.50"));
+    }
+
+    @Test
+    void nonCompletingTransitionsDoNotRegisterRevenue() {
+        Order order = new Order(STORE, customer, null);
+        when(orderRepository.findByIdAndStoreIdForUpdate(order.getId(), STORE)).thenReturn(Optional.of(order));
+
+        orderService.changeStatus(order.getId(), STORE, OrderStatus.IN_PRODUCTION);
+        orderService.changeStatus(order.getId(), STORE, OrderStatus.CANCELLED);
+
+        verifyNoInteractions(financeService);
     }
 }

@@ -3,6 +3,7 @@ package com.doceflux.doceflux_api.finance.controller;
 import com.doceflux.doceflux_api.finance.dto.CashFlowResponse;
 import com.doceflux.doceflux_api.finance.dto.ExpenseRequest;
 import com.doceflux.doceflux_api.finance.dto.IncomeRequest;
+import com.doceflux.doceflux_api.finance.dto.UpdateTransactionRequest;
 import com.doceflux.doceflux_api.finance.dto.TransactionResponse;
 import com.doceflux.doceflux_api.finance.service.FinanceService;
 import com.doceflux.doceflux_api.finance.domain.TransactionType;
@@ -20,6 +21,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -74,6 +76,25 @@ public class FinanceController {
     })
     public ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id) {
         financeService.delete(id, storeId(jwt));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/transactions/{id}")
+    @Operation(summary = "Edita uma movimentação",
+            description = "Altera descrição, valor, data e categoria. Tipo, pedido vinculado e loja são preservados.")
+    public TransactionResponse update(@AuthenticationPrincipal Jwt jwt, @PathVariable UUID id,
+                                      @Valid @RequestBody UpdateTransactionRequest request) {
+        return TransactionResponse.from(financeService.update(id, storeId(jwt), request));
+    }
+
+    @DeleteMapping("/transactions")
+    @Operation(summary = "Exclui as movimentações de um período",
+            description = "Remove fisicamente os lançamentos da loja no intervalo inclusivo. Não altera pedidos.")
+    public ResponseEntity<Void> deleteByPeriod(
+            @AuthenticationPrincipal Jwt jwt,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        financeService.deleteByPeriod(storeId(jwt), startDate, endDate);
         return ResponseEntity.noContent().build();
     }
 

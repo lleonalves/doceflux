@@ -2,6 +2,7 @@ package com.doceflux.doceflux_api.order.service;
 
 import com.doceflux.doceflux_api.customer.domain.Customer;
 import com.doceflux.doceflux_api.customer.repository.CustomerRepository;
+import com.doceflux.doceflux_api.finance.service.FinanceService;
 import com.doceflux.doceflux_api.order.domain.Order;
 import com.doceflux.doceflux_api.order.domain.OrderItem;
 import com.doceflux.doceflux_api.order.domain.OrderStatus;
@@ -24,10 +25,13 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final CustomerRepository customerRepository;
     private final ProductRepository productRepository;
+    private final FinanceService financeService;
 
     public OrderService(OrderRepository orderRepository,
                         CustomerRepository customerRepository,
-                        ProductRepository productRepository) {
+                        ProductRepository productRepository,
+                        FinanceService financeService) {
+        this.financeService = financeService;
         this.orderRepository = orderRepository;
         this.customerRepository = customerRepository;
         this.productRepository = productRepository;
@@ -61,6 +65,9 @@ public class OrderService {
         order.changeStatus(status);
         if (status == OrderStatus.CANCELLED) {
             restoreStock(order, storeId);
+        } else if (status == OrderStatus.COMPLETED) {
+            financeService.registerOrderRevenue(storeId, order.getId(), order.getCustomer().getName(),
+                    order.getTotalAmount());
         }
         return order;
     }

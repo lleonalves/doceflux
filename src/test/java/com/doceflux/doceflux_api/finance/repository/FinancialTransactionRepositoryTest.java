@@ -1,5 +1,6 @@
 package com.doceflux.doceflux_api.finance.repository;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import com.doceflux.doceflux_api.customer.domain.Customer;
 import com.doceflux.doceflux_api.customer.repository.CustomerRepository;
 import com.doceflux.doceflux_api.finance.domain.FinancialTransaction;
@@ -202,5 +203,37 @@ class FinancialTransactionRepositoryTest {
                 .setParameter("orderId", order.getId())
                 .executeUpdate())
                 .isInstanceOf(Exception.class);
+    }
+
+    @Test
+    void rejectsSecondAutomaticRevenueForSameStoreAndOrder() {
+        Order order = persistOrder();
+        transactionRepository.saveAndFlush(FinancialTransaction.orderRevenue(
+                STORE, "Pedido", BigDecimal.TEN, START, order.getId()));
+
+        assertThatThrownBy(() -> transactionRepository.saveAndFlush(FinancialTransaction.orderRevenue(
+                STORE, "Pedido de novo", BigDecimal.TEN, START, order.getId())))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void deletesPeriodInclusivelyOnlyForTheGivenStore() {
+        UUID otherStore = UUID.randomUUID();
+        LocalDate from = LocalDate.of(1998, 3, 10);
+        LocalDate to = LocalDate.of(1998, 3, 12);
+        var inStart = transactionRepository.save(FinancialTransaction.expense(STORE, "Início", BigDecimal.ONE, from, null));
+        var inEnd = transactionRepository.save(FinancialTransaction.expense(STORE, "Fim", BigDecimal.ONE, to, null));
+        var before = transactionRepository.save(FinancialTransaction.expense(STORE, "Antes", BigDecimal.ONE, from.minusDays(1), null));
+        var after = transactionRepository.save(FinancialTransaction.expense(STORE, "Depois", BigDecimal.ONE, to.plusDays(1), null));
+        var otherStoreTx = transactionRepository.save(FinancialTransaction.expense(otherStore, "Outra loja", BigDecimal.ONE, from, null));
+        transactionRepository.flush();
+
+        transactionRepository.deleteByStoreIdAndPeriod(STORE, from, to);
+
+        assertThat(transactionRepository.findById(inStart.getId())).isEmpty();
+        assertThat(transactionRepository.findById(inEnd.getId())).isEmpty();
+        assertThat(transactionRepository.findById(before.getId())).isPresent();
+        assertThat(transactionRepository.findById(after.getId())).isPresent();
+        assertThat(transactionRepository.findById(otherStoreTx.getId())).isPresent();
     }
 }
