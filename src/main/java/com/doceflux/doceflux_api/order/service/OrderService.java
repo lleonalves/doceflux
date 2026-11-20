@@ -59,7 +59,18 @@ public class OrderService {
         Order order = orderRepository.findByIdAndStoreIdForUpdate(id, storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Pedido não encontrado: " + id));
         order.changeStatus(status);
+        if (status == OrderStatus.CANCELLED) {
+            restoreStock(order, storeId);
+        }
         return order;
+    }
+
+    private void restoreStock(Order order, UUID storeId) {
+        order.getItems().stream()
+                .filter(item -> item.getProduct() != null)
+                .forEach(item -> productRepository
+                        .findByIdAndStoreIdForUpdate(item.getProduct().getId(), storeId)
+                        .ifPresent(product -> product.addStock(item.getQuantity())));
     }
 
     private OrderItem toOrderItem(OrderItemRequest item, UUID storeId) {
@@ -73,13 +84,14 @@ public class OrderService {
         if (item.name() != null || item.unitPrice() != null) {
             throw new BusinessRuleException("Item de catálogo não aceita nome ou preço unitário informados");
         }
-        Product product = productRepository.findByIdAndStoreId(item.productId(), storeId)
+        Product product = productRepository.findByIdAndStoreIdForUpdate(item.productId(), storeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Produto não encontrado: " + item.productId()));
         if (!product.isActive()) {
             throw new BusinessRuleException(
                     "O produto '" + product.getName() + "' está inativo e não pode ser incluído em novos pedidos");
         }
-        return OrderItem.fromCatalog(product,item.description(), item.quantity());
+        product.removeStock(item.quantity());
+        return OrderItem.fromCatalog(product, item.description(), item.quantity());
     }
 
     private OrderItem customItem(OrderItemRequest item) {

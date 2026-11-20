@@ -56,9 +56,9 @@ class OrderServiceTest {
 
     @Test
     void createsOrderWithCatalogItemSnapshottingNameAndPrice() {
-        Product product = new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null);
+        Product product = new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 10, null);
         when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
-        when(productRepository.findByIdAndStoreId(product.getId(), STORE)).thenReturn(Optional.of(product));
+        when(productRepository.findByIdAndStoreIdForUpdate(product.getId(), STORE)).thenReturn(Optional.of(product));
         mockSave();
 
         Order order = orderService.create(STORE, new OrderRequest(customer.getId(), "Retirada sábado",
@@ -124,13 +124,13 @@ class OrderServiceTest {
         UUID productId = UUID.randomUUID();
         UUID otherStore = UUID.randomUUID();
         when(customerRepository.findByIdAndStoreId(customer.getId(), otherStore)).thenReturn(Optional.of(customer));
-        when(productRepository.findByIdAndStoreId(productId, otherStore)).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndStoreIdForUpdate(productId, otherStore)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> orderService.create(otherStore, new OrderRequest(customer.getId(), null,
                 List.of(new OrderItemRequest(productId, null, null, 1, null)))))
                 .isInstanceOf(ResourceNotFoundException.class);
 
-        verify(productRepository).findByIdAndStoreId(productId, otherStore);
+        verify(productRepository).findByIdAndStoreIdForUpdate(productId, otherStore);
         verify(orderRepository, never()).save(any());
     }
 
@@ -138,7 +138,7 @@ class OrderServiceTest {
     void rejectsUnknownProduct() {
         UUID productId = UUID.randomUUID();
         when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
-        when(productRepository.findByIdAndStoreId(productId, STORE)).thenReturn(Optional.empty());
+        when(productRepository.findByIdAndStoreIdForUpdate(productId, STORE)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> orderService.create(STORE, new OrderRequest(customer.getId(), null,
                 List.of(new OrderItemRequest(productId, null, null, 1, null)))))
@@ -149,10 +149,10 @@ class OrderServiceTest {
 
     @Test
     void rejectsInactiveCatalogProduct() {
-        Product product = new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null);
+        Product product = new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 10, null);
         product.changeActive(false);
         when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
-        when(productRepository.findByIdAndStoreId(product.getId(), STORE)).thenReturn(Optional.of(product));
+        when(productRepository.findByIdAndStoreIdForUpdate(product.getId(), STORE)).thenReturn(Optional.of(product));
 
         assertThatThrownBy(() -> orderService.create(STORE, new OrderRequest(customer.getId(), null,
                 List.of(new OrderItemRequest(product.getId(), null, null, 1, null)))))
@@ -189,9 +189,9 @@ class OrderServiceTest {
 
     @Test
     void createsOrderWithPendingStatusAndTotalFromAllItems() {
-        Product product = new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 0, null);
+        Product product = new Product(UUID.randomUUID(), "Bolo de Cenoura", null, new BigDecimal("45.50"), 10, null);
         when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
-        when(productRepository.findByIdAndStoreId(product.getId(), STORE)).thenReturn(Optional.of(product));
+        when(productRepository.findByIdAndStoreIdForUpdate(product.getId(), STORE)).thenReturn(Optional.of(product));
         mockSave();
 
         Order order = orderService.create(STORE, new OrderRequest(customer.getId(), null, List.of(
@@ -201,6 +201,75 @@ class OrderServiceTest {
         assertThat(order.getStatus()).isEqualTo(OrderStatus.PENDING);
         assertThat(order.getTotalAmount()).isEqualByComparingTo("377.50");
         assertThat(order.getTotalAmount().scale()).isEqualTo(2);
+    }
+
+    private Product stockedProduct(int stock) {
+        return new Product(STORE, "Bolo de Cenoura", null, new BigDecimal("45.50"), stock, null);
+    }
+
+    private Order orderWithCatalogItem(Product product, int quantity) {
+        Order order = new Order(STORE, customer, null);
+        order.addItem(OrderItem.fromCatalog(product, null, quantity));
+        return order;
+    }
+
+    @Test
+    void createDecreasesStockOfCatalogItemsOnly() {
+        Product product = stockedProduct(10);
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
+        when(productRepository.findByIdAndStoreIdForUpdate(product.getId(), STORE)).thenReturn(Optional.of(product));
+        mockSave();
+
+        orderService.create(STORE, new OrderRequest(customer.getId(), null, List.of(
+                new OrderItemRequest(product.getId(), null, null, 3, null),
+                new OrderItemRequest(null, "Docinhos", null, 2, BigDecimal.TEN))));
+
+        assertThat(product.getStockQuantity()).isEqualTo(7);
+    }
+
+    @Test
+    void createRejectsQuantityAboveStockWithoutChangingBalance() {
+        Product product = stockedProduct(2);
+        when(customerRepository.findByIdAndStoreId(customer.getId(), STORE)).thenReturn(Optional.of(customer));
+        when(productRepository.findByIdAndStoreIdForUpdate(product.getId(), STORE)).thenReturn(Optional.of(product));
+
+        assertThatThrownBy(() -> orderService.create(STORE, new OrderRequest(customer.getId(), null,
+                List.of(new OrderItemRequest(product.getId(), null, null, 3, null)))))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessage("Estoque insuficiente para o produto: Bolo de Cenoura (disponível: 2)");
+
+        assertThat(product.getStockQuantity()).isEqualTo(2);
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    void cancelRestoresStockFromPendingAndInProduction() {
+        for (OrderStatus from : List.of(OrderStatus.PENDING, OrderStatus.IN_PRODUCTION)) {
+            Product product = stockedProduct(7);
+            Order order = orderWithCatalogItem(product, 3);
+            if (from == OrderStatus.IN_PRODUCTION) {
+                order.changeStatus(OrderStatus.IN_PRODUCTION);
+            }
+            when(orderRepository.findByIdAndStoreIdForUpdate(order.getId(), STORE)).thenReturn(Optional.of(order));
+            when(productRepository.findByIdAndStoreIdForUpdate(product.getId(), STORE)).thenReturn(Optional.of(product));
+
+            orderService.changeStatus(order.getId(), STORE, OrderStatus.CANCELLED);
+
+            assertThat(product.getStockQuantity()).isEqualTo(10);
+        }
+    }
+
+    @Test
+    void completingOrderDoesNotTouchStock() {
+        Product product = stockedProduct(7);
+        Order order = orderWithCatalogItem(product, 3);
+        order.changeStatus(OrderStatus.IN_PRODUCTION);
+        when(orderRepository.findByIdAndStoreIdForUpdate(order.getId(), STORE)).thenReturn(Optional.of(order));
+
+        orderService.changeStatus(order.getId(), STORE, OrderStatus.COMPLETED);
+
+        assertThat(product.getStockQuantity()).isEqualTo(7);
+        verify(productRepository, never()).findByIdAndStoreIdForUpdate(any(), any());
     }
 
     @Test

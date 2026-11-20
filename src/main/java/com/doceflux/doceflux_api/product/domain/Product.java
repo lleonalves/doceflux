@@ -4,6 +4,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import com.doceflux.doceflux_api.shared.BusinessRuleException;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -67,6 +68,20 @@ public class Product {
         this.name = name;
         this.description = description;
         this.price = price;
+        this.updatedAt = Instant.now();
+    }
+
+    public void removeStock(int quantity) {
+        if (stockQuantity < quantity) {
+            throw new BusinessRuleException("Estoque insuficiente para o produto: " + name
+                    + " (disponível: " + stockQuantity + ")");
+        }
+        this.stockQuantity -= quantity;
+        this.updatedAt = Instant.now();
+    }
+
+    public void addStock(int quantity) {
+        this.stockQuantity += quantity;
         this.updatedAt = Instant.now();
     }
 
