@@ -47,6 +47,13 @@ public class Store {
         this.updatedAt = this.createdAt;
     }
 
+    public void updateProfile(String storeName, String mainManager, String responsibleManager) {
+        this.storeName = storeName;
+        this.mainManager = mainManager;
+        this.responsibleManager = responsibleManager;
+        this.updatedAt = Instant.now();
+    }
+
     public UUID getId() {
         return id;
     }

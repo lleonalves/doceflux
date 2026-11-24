@@ -57,6 +57,11 @@ public class UserAccount {
         this.updatedAt = this.createdAt;
     }
 
+    public void changePasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+        this.updatedAt = Instant.now();
+    }
+
     public UUID getId() {
         return id;
     }
