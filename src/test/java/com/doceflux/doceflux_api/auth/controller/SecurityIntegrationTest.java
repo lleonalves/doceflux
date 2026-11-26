@@ -9,6 +9,7 @@ import com.doceflux.doceflux_api.auth.security.TokenService;
 import com.doceflux.doceflux_api.auth.service.AuthService;
 import com.doceflux.doceflux_api.dashboard.controller.DashboardController;
 import com.doceflux.doceflux_api.dashboard.service.DashboardService;
+import com.doceflux.doceflux_api.shared.HealthController;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,11 +33,13 @@ import java.time.LocalDate;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = {AuthController.class, DashboardController.class})
+@WebMvcTest(controllers = {AuthController.class, DashboardController.class, HealthController.class})
 @Import({SecurityConfig.class, TokenService.class})
 class SecurityIntegrationTest {
 
@@ -109,6 +112,28 @@ class SecurityIntegrationTest {
                 .andExpect(jsonPath("$.companyStartDate").value("2020-05-10"));
 
         verify(authService).me(user.getId());
+    }
+
+    @Test
+    void keepsHealthCheckPublic() throws Exception {
+        mockMvc.perform(get("/api/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("UP"));
+    }
+
+    @Test
+    void allowsCorsOnlyForConfiguredOrigins() throws Exception {
+        for (String origin : new String[]{"http://localhost:5173", "https://doceflux.example.com"}) {
+            mockMvc.perform(options("/api/auth/me")
+                            .header(HttpHeaders.ORIGIN, origin)
+                            .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, origin));
+        }
+        mockMvc.perform(options("/api/auth/me")
+                        .header(HttpHeaders.ORIGIN, "https://outro.example.com")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

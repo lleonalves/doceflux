@@ -12,10 +12,14 @@ import com.doceflux.doceflux_api.auth.repository.UserAccountRepository;
 import com.doceflux.doceflux_api.auth.security.TokenService;
 import com.doceflux.doceflux_api.shared.BusinessRuleException;
 import com.doceflux.doceflux_api.shared.InvalidCredentialsException;
+import com.doceflux.doceflux_api.shared.InvalidInviteCodeException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.util.Locale;
 import java.util.UUID;
@@ -27,17 +31,21 @@ public class AuthService {
     private final UserAccountRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
+    private final String registrationSecret;
 
     public AuthService(StoreRepository storeRepository, UserAccountRepository userRepository,
-                       PasswordEncoder passwordEncoder, TokenService tokenService) {
+                       PasswordEncoder passwordEncoder, TokenService tokenService,
+                       @Value("${app.security.registration-secret:}") String registrationSecret) {
         this.storeRepository = storeRepository;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.tokenService = tokenService;
+        this.registrationSecret = registrationSecret;
     }
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
+        verifyInviteCode(request.inviteCode());
         String email = normalizeEmail(request.email());
         if (userRepository.existsByEmail(email)) {
             throw new BusinessRuleException("O email informado já está em uso");
@@ -71,6 +79,17 @@ public class AuthService {
                 .filter(UserAccount::isActive)
                 .orElseThrow(() -> new InvalidCredentialsException("Sessão inválida"));
         return MeResponse.from(user);
+    }
+
+    private void verifyInviteCode(String inviteCode) {
+        if (registrationSecret == null || registrationSecret.isBlank()) {
+            return;
+        }
+        if (inviteCode == null || !MessageDigest.isEqual(
+                registrationSecret.getBytes(StandardCharsets.UTF_8),
+                inviteCode.getBytes(StandardCharsets.UTF_8))) {
+            throw new InvalidInviteCodeException();
+        }
     }
 
     private AuthResponse authResponse(UserAccount user) {

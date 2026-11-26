@@ -36,11 +36,13 @@ public class AuthController {
     }
 
     @Operation(summary = "Cadastro inicial da confeitaria",
-            description = "Cria a loja e o usuário gestor (OWNER). Permitido apenas enquanto não houver loja cadastrada.")
+            description = "Cria a loja e o usuário gestor (OWNER). Exige inviteCode quando o código de convite está configurado.")
     @SecurityRequirements
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Loja cadastrada e token emitido"),
-            @ApiResponse(responseCode = "400", description = "Dados inválidos, loja já cadastrada ou email em uso",
+            @ApiResponse(responseCode = "400", description = "Dados inválidos ou email em uso",
+                    content = @Content),
+            @ApiResponse(responseCode = "403", description = "Código de convite inválido ou não informado",
                     content = @Content)
     })
     @PostMapping("/register")

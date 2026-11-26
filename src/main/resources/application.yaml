@@ -17,7 +17,11 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
 
 app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   security:
+    # Vazio = cadastro aberto, sem código de convite.
+    registration-secret: ${REGISTRATION_SECRET:}
     jwt:
       secret: ${JWT_SECRET:dev-local-secret-key-minimum-32-bytes-long}
       expiration-seconds: ${APP_JWT_EXPIRATION_SECONDS:28800}

@@ -56,7 +56,7 @@ class AuthServiceTest {
     private AuthService authService;
 
     private RegisterRequest registerRequest(LocalDate startDate) {
-        return new RegisterRequest(" Doce Sonho ", " Maria ", " João ", startDate, "  Maria@Email.COM ", "segredo123");
+        return new RegisterRequest(" Doce Sonho ", " Maria ", " João ", startDate, "  Maria@Email.COM ", "segredo123", null);
     }
 
     private void mockSaves() {
@@ -115,7 +115,7 @@ class AuthServiceTest {
 
         AuthResponse first = authService.register(registerRequest(START_DATE));
         AuthResponse second = authService.register(new RegisterRequest(
-                "Bolos da Ana", "Ana", "Ana", START_DATE, "ana@email.com", "segredo123"));
+                "Bolos da Ana", "Ana", "Ana", START_DATE, "ana@email.com", "segredo123", null));
 
         assertThat(first.storeId()).isNotNull().isNotEqualTo(second.storeId());
         assertThat(second.storeName()).isEqualTo("Bolos da Ana");

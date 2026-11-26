@@ -1,13 +1,29 @@
-# Sem valores de fallback: o profile prod não inicia se alguma variável estiver ausente.
+# Sem valores de fallback para segredos: o profile prod não inicia se algum estiver ausente.
+server:
+  port: ${PORT:8080}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 spring:
   datasource:
-    url: ${DB_URL}
+    # Formato JDBC obrigatório (jdbc:postgresql://...). DB_URL tem prioridade sobre DATABASE_URL.
+    url: ${DB_URL:${DATABASE_URL}}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  flyway:
+    enabled: true
   jpa:
+    hibernate:
+      ddl-auto: validate
     show-sql: false
 
 app:
   security:
+    # ATENÇÃO: se REGISTRATION_SECRET estiver ausente ou em branco, o cadastro fica aberto.
+    registration-secret: ${REGISTRATION_SECRET:}
     jwt:
       secret: ${JWT_SECRET}
